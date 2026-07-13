@@ -29,7 +29,7 @@
 use anyhow::{Context, Result};
 use robonix_atlas::client::AtlasClient;
 use robonix_atlas::pb as atlas_pb;
-use robonix_cli::launch::PackageRuntimeRecord;
+use robonix_cli::launch::{PackageRuntimeRecord, terminate_process_group};
 use robonix_cli::output;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -1915,21 +1915,16 @@ async fn spawn_and_init(
     // One package = one provider. After spawn, the new provider_id is whatever
     // atlas saw register that wasn't in `before`.
 
-    // Once the wrapper is up, every error path below must SIGKILL the
+    // Once the wrapper is up, every error path below must terminate the
     // PGID before bailing — otherwise `?` returns the spawned process to
     // a dead Spawned (which itself has no killing Drop), the caller's
     // teardown loop never sees it (`children.push(sp)` only runs after
     // this fn succeeds), and the orphan keeps holding whatever the
     // package opened (e.g. memsearch's milvus DB lock, executor's gRPC
-    // port, …). Reaping here keeps boot recoverable: a fresh `rbnx boot`
-    // immediately after a failed one finds a clean process table.
+    // port, …). Give the provider's SIGTERM handler time to run
+    // `on_shutdown` before SIGKILL fallback; providers may own ROS children
+    // in their own process groups that only the handler knows about.
     let pgid = sp.pgid;
-    let reap = || {
-        let _ = nix::sys::signal::killpg(
-            nix::unistd::Pid::from_raw(pgid as i32),
-            nix::sys::signal::Signal::SIGKILL,
-        );
-    };
 
     let (provider_id, driver_contract) = match wait_for_registration(
         atlas,
@@ -1943,7 +1938,7 @@ async fn spawn_and_init(
     {
         Ok(v) => v,
         Err(e) => {
-            reap();
+            terminate_process_group(pgid, Duration::from_secs(8)).await;
             return Err(e);
         }
     };
@@ -1965,7 +1960,7 @@ async fn spawn_and_init(
                 log_file.display()
             ),
         );
-        reap();
+        terminate_process_group(pgid, Duration::from_secs(8)).await;
         anyhow::bail!(
             "[{component}/{pkg_label}] provider_id mismatch: manifest name='{}' vs Capability(id='{}')",
             entry.name,
@@ -1990,7 +1985,7 @@ async fn spawn_and_init(
     }) {
         Ok(value) => value,
         Err(error) => {
-            reap();
+            terminate_process_group(pgid, Duration::from_secs(8)).await;
             return Err(error);
         }
     };
@@ -2016,7 +2011,7 @@ async fn spawn_and_init(
     {
         Ok(v) => v,
         Err(e) => {
-            reap();
+            terminate_process_group(pgid, Duration::from_secs(8)).await;
             return Err(e);
         }
     };
@@ -2051,7 +2046,7 @@ async fn spawn_and_init(
     {
         Ok(v) => v,
         Err(e) => {
-            reap();
+            terminate_process_group(pgid, Duration::from_secs(8)).await;
             return Err(e);
         }
     };
