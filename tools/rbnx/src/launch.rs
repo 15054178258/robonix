@@ -516,12 +516,14 @@ pub fn is_expected_provider_registration(
 
 /// Outcome of `wait_for_registration_core`:
 ///   * `provider_id` — the new provider that appeared after `before`.
+///   * `provider_kind` — Atlas provider kind, used to keep skills INACTIVE.
 ///   * `driver_contract` — if the new provider also declared a
 ///     `*/driver` gRPC capability within the settle window, its
 ///     contract_id; otherwise `None` (no Driver(CMD_*) lifecycle).
 #[derive(Debug, Clone)]
 pub struct RegistrationOutcome {
     pub provider_id: String,
+    pub provider_kind: i32,
     pub driver_contract: Option<String>,
 }
 
@@ -613,6 +615,7 @@ pub async fn wait_for_registration_core(
             };
             return Ok(RegistrationOutcome {
                 provider_id,
+                provider_kind: current.kind,
                 driver_contract,
             });
         }
