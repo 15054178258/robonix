@@ -182,7 +182,7 @@ pub enum Commands {
     /// still functional.
     #[command(hide = true)]
     Install {
-        /// Install from GitHub (e.g. user/repo or https://github.com/user/repo)
+        /// Install from GitHub (e.g. user/repo or <https://github.com/user/repo>)
         #[arg(long)]
         github: Option<String>,
         /// Install from local path
