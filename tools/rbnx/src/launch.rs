@@ -203,27 +203,168 @@ async fn process_group_has_boot_id(pgid: u32, boot_id: &str) -> bool {
         Ok(output) if output.status.success() => output,
         _ => return false,
     };
-    let expected = format!("RBNX_BOOT_ID={boot_id}");
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(|line| line.trim().parse::<u32>().ok())
-        .any(|pid| {
-            std::fs::read(format!("/proc/{pid}/environ"))
-                .ok()
-                .is_some_and(|env| {
-                    env.split(|byte| *byte == 0)
-                        .any(|entry| entry == expected.as_bytes())
-                })
-        })
+        .any(|pid| process_has_boot_id(pid, boot_id))
+}
+
+/// Prove that one process carries the exact boot ownership marker inherited
+/// from its `rbnx boot` parent. This is also the portable identity fallback for
+/// the detached watchdog on targets (notably macOS) without Linux procfs start
+/// ticks. Inspection failure is a mismatch so stale PIDs are never trusted.
+pub fn process_has_boot_id(pid: u32, boot_id: &str) -> bool {
+    if boot_id.is_empty() {
+        return false;
+    }
+    let expected = format!("RBNX_BOOT_ID={boot_id}");
+    process_has_environment_entry(pid, expected.as_bytes())
+}
+
+/// Linux exposes the immutable exec environment as NUL-delimited procfs
+/// bytes. Failure to read it means ownership is unproven, so stale-PGID
+/// protection refuses teardown rather than guessing.
+#[cfg(target_os = "linux")]
+fn process_has_environment_entry(pid: u32, expected: &[u8]) -> bool {
+    std::fs::read(format!("/proc/{pid}/environ"))
+        .ok()
+        .is_some_and(|env| env.split(|byte| *byte == 0).any(|entry| entry == expected))
+}
+
+/// Parse a Darwin `KERN_PROCARGS2` buffer and look for one exact environment
+/// entry after the executable path and argc-counted argv strings. `None`
+/// denotes malformed/incomplete kernel data rather than a proven mismatch.
+#[cfg(any(target_os = "macos", test))]
+fn macos_procargs_has_environment_entry(buffer: &[u8], expected: &[u8]) -> Option<bool> {
+    let argc_bytes: [u8; std::mem::size_of::<i32>()] =
+        buffer.get(..std::mem::size_of::<i32>())?.try_into().ok()?;
+    let argc = usize::try_from(i32::from_ne_bytes(argc_bytes)).ok()?;
+    let mut cursor = std::mem::size_of::<i32>();
+
+    cursor += buffer.get(cursor..)?.iter().position(|byte| *byte == 0)? + 1;
+    while buffer.get(cursor) == Some(&0) {
+        cursor += 1;
+    }
+    for _ in 0..argc {
+        cursor += buffer.get(cursor..)?.iter().position(|byte| *byte == 0)? + 1;
+    }
+
+    while cursor < buffer.len() {
+        while buffer.get(cursor) == Some(&0) {
+            cursor += 1;
+        }
+        if cursor == buffer.len() {
+            break;
+        }
+        let tail = buffer.get(cursor..)?;
+        let end = tail.iter().position(|byte| *byte == 0)?;
+        if &tail[..end] == expected {
+            return Some(true);
+        }
+        cursor += end + 1;
+    }
+    Some(false)
+}
+
+/// macOS has no procfs. Read `KERN_PROCARGS2` directly so persisted shutdown
+/// can prove that a live process group belongs to its recorded boot without
+/// parsing human-formatted `ps` output.
+#[cfg(target_os = "macos")]
+fn process_has_environment_entry(pid: u32, expected: &[u8]) -> bool {
+    use std::ptr::null_mut;
+
+    let Ok(pid) = i32::try_from(pid) else {
+        return false;
+    };
+    let mut mib = [nix::libc::CTL_KERN, nix::libc::KERN_PROCARGS2, pid];
+    let mut buffer_size = 0;
+    // SAFETY: the MIB is initialized and its length is correct. A null output
+    // pointer asks sysctl for the required byte count only.
+    if unsafe {
+        nix::libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            null_mut(),
+            &mut buffer_size,
+            null_mut(),
+            0,
+        )
+    } != 0
+        || buffer_size == 0
+    {
+        return false;
+    }
+
+    let mut buffer = vec![0_u8; buffer_size];
+    // SAFETY: `buffer` owns `buffer_size` writable bytes and sysctl receives
+    // that exact capacity. The kernel updates `buffer_size` to bytes written.
+    if unsafe {
+        nix::libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            buffer.as_mut_ptr().cast(),
+            &mut buffer_size,
+            null_mut(),
+            0,
+        )
+    } != 0
+        || buffer_size > buffer.len()
+    {
+        return false;
+    }
+    buffer.truncate(buffer_size);
+    macos_procargs_has_environment_entry(&buffer, expected) == Some(true)
+}
+
+/// Unknown targets cannot prove boot ownership yet, so checked teardown must
+/// refuse the process group instead of risking a PID/PGID-reuse kill.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn process_has_environment_entry(_pid: u32, _expected: &[u8]) -> bool {
+    false
 }
 
 /// Linux `/proc/<pid>/stat` field 22. The value is stable for the lifetime of
 /// a process and lets the watchdog distinguish its boot parent from a reused
 /// PID. Returns `None` when procfs is unavailable or the process exited.
+#[cfg(target_os = "linux")]
 pub fn proc_start_time_ticks(pid: u32) -> Option<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let after_comm = stat.get(stat.rfind(')')? + 1..)?.trim_start();
     after_comm.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// Darwin process start time from `PROC_PIDTBSDINFO`, normalized to
+/// microseconds since the Unix epoch. Unlike `/proc`, this is available on a
+/// stock macOS host and remains stable across the process lifetime.
+#[cfg(target_os = "macos")]
+pub fn proc_start_time_ticks(pid: u32) -> Option<u64> {
+    let pid = i32::try_from(pid).ok()?;
+    let mut info = std::mem::MaybeUninit::<nix::libc::proc_bsdinfo>::zeroed();
+    let info_size = std::mem::size_of::<nix::libc::proc_bsdinfo>();
+    // SAFETY: `info` points to `info_size` writable bytes of the exact struct
+    // requested by PROC_PIDTBSDINFO. A full-size return initializes it.
+    let written = unsafe {
+        nix::libc::proc_pidinfo(
+            pid,
+            nix::libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            i32::try_from(info_size).ok()?,
+        )
+    };
+    if usize::try_from(written).ok()? != info_size {
+        return None;
+    }
+    // SAFETY: the kernel reported that it filled the complete structure.
+    let info = unsafe { info.assume_init() };
+    info.pbi_start_tvsec
+        .checked_mul(1_000_000)?
+        .checked_add(info.pbi_start_tvusec)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub fn proc_start_time_ticks(_pid: u32) -> Option<u64> {
+    None
 }
 
 async fn run_package_stop_hook(
@@ -574,8 +715,17 @@ pub async fn call_driver_cmd(
 
 #[cfg(test)]
 mod tests {
-    use super::{atlas_pb, is_expected_provider_registration};
+    use super::{atlas_pb, is_expected_provider_registration, proc_start_time_ticks};
     use std::collections::HashSet;
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn live_process_start_identity_is_available_and_stable() {
+        let first = proc_start_time_ticks(std::process::id())
+            .expect("supported host must expose a live process start identity");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        assert_eq!(proc_start_time_ticks(std::process::id()), Some(first));
+    }
 
     #[test]
     fn expected_registration_ignores_unrelated_provider() {
