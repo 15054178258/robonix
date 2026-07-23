@@ -74,13 +74,7 @@ _MODE_TRANSPORT_OK = {
 
 
 def _provider_bind_host(value: str | None = None) -> str:
-    """Return the provider server bind host as a normalized IPv4 literal.
-
-    The default preserves existing cross-host behavior. Deployments that must
-    keep capability servers local can set ``ROBONIX_PROVIDER_BIND_HOST`` to
-    ``127.0.0.1`` before constructing a provider.
-    """
-
+    """Return the validated IPv4 address used by provider gRPC servers."""
     raw = (
         os.environ.get("ROBONIX_PROVIDER_BIND_HOST", "0.0.0.0")
         if value is None
@@ -94,12 +88,21 @@ def _provider_bind_host(value: str | None = None) -> str:
             "ROBONIX_PROVIDER_BIND_HOST must be an IPv4 address literal"
         ) from exc
     if not isinstance(address, ipaddress.IPv4Address):
-        raise ValueError("ROBONIX_PROVIDER_BIND_HOST must be an IPv4 address literal")
+        raise ValueError(
+            "ROBONIX_PROVIDER_BIND_HOST must be an IPv4 address literal"
+        )
     return str(address)
 
 
 def _resolve_provider_id(default_id: str) -> str:
-    """Resolve a package default id to its deploy-time instance identity."""
+    """Return the deployment instance id, or the package's standalone default.
+
+    ``rbnx boot`` assigns every package instance a unique manifest ``name`` and
+    exports it as ``RBNX_INSTANCE_NAME``. Package source code may keep a stable
+    default id so the same repository still works with bare ``rbnx start``;
+    deployed instances must register, declare capabilities, heartbeat, and
+    report lifecycle state under the manifest-owned identity.
+    """
     instance_id = os.environ.get(_INSTANCE_NAME_ENV, "").strip()
     if not instance_id:
         if os.environ.get("RBNX_DEPLOY_MANAGED", "").strip():
@@ -935,8 +938,11 @@ class _ProviderBase:
 
 
 class Primitive(_ProviderBase):
-    """A hardware / data-source driver CapabilityProvider.
-    e.g. tiago_camera, mid360_lidar, ranger CAN chassis.
+    """A hardware or data-source capability provider.
+
+    Examples include a camera, lidar, or CAN chassis driver.
+
+    Example::
 
         primitive_cam = Primitive(
             id="webots_tiago_camera_front",
@@ -952,9 +958,11 @@ class Primitive(_ProviderBase):
 
 
 class Service(_ProviderBase):
-    """A composed CapabilityProvider built on top of Primitives /
-    Services.  e.g. mapping, navigation, scene; also the platform-
-    internal pilot / executor / scene / memory / liaison services.
+    """A capability provider composed from primitives or other services.
+
+    Examples include mapping, navigation, scene, memory, and speech services.
+
+    Example::
 
         service_mapping = Service(
             id="mapping",
@@ -970,9 +978,11 @@ class Service(_ProviderBase):
 
 
 class Skill(_ProviderBase):
-    """A model-backed, executor-activated CapabilityProvider.  Sits at
-    INACTIVE between calls; the executor flips it to ACTIVE on demand
-    (and MAY flip back when idle, configurable).
+    """A model-backed capability provider activated by Executor on demand.
+
+    A skill starts in ``INACTIVE`` and becomes ``ACTIVE`` when invoked.
+
+    Example::
 
         skill_explore = Skill(
             id="explore",

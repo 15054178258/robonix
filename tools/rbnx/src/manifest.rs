@@ -75,7 +75,13 @@ pub fn prepare_deployment_manifest(
     Ok(root)
 }
 
-/// Validate Atlas provider identities owned by deployment package entries.
+/// Validate package instance identities in one deployment.
+///
+/// Every primitive, service, and skill entry ``name`` becomes an Atlas provider
+/// id. The ids must therefore be non-empty, whitespace-normalized, and unique
+/// across package sections. Built-in system processes resolve their provider
+/// ids through component-specific configuration and are checked against the
+/// live Atlas registry when package startup begins.
 pub fn validate_deployment_instance_names(root: &serde_yaml::Value) -> Result<()> {
     let mut seen = HashSet::new();
     let mut record = |name: &str, location: &str| -> Result<()> {
@@ -589,43 +595,6 @@ capabilities: []
     }
 
     #[test]
-    fn deployment_instance_names_are_unique_across_sections() {
-        let valid: serde_yaml::Value =
-            serde_yaml::from_str("primitive:\n  - name: camera\nservice:\n  - name: navigation\n")
-                .unwrap();
-        validate_deployment_instance_names(&valid).unwrap();
-
-        let duplicate: serde_yaml::Value =
-            serde_yaml::from_str("primitive:\n  - name: camera\nskill:\n  - name: camera\n")
-                .unwrap();
-        assert!(
-            validate_deployment_instance_names(&duplicate)
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate deployment instance name 'camera'")
-        );
-    }
-
-    #[test]
-    fn deployment_instance_name_is_required_and_normalized() {
-        let missing: serde_yaml::Value =
-            serde_yaml::from_str("primitive:\n  - path: camera\n").unwrap();
-        assert!(
-            validate_deployment_instance_names(&missing)
-                .unwrap_err()
-                .to_string()
-                .contains("must declare a non-empty `name`")
-        );
-
-        let padded: serde_yaml::Value =
-            serde_yaml::from_str("primitive:\n  - name: ' camera '\n").unwrap();
-        assert!(
-            validate_deployment_instance_names(&padded)
-                .unwrap_err()
-                .to_string()
-                .contains("must not contain leading or trailing whitespace")
-        );
-    #[test]
     fn system_package_manifest_is_separate_from_runtime_config() {
         let value: serde_yaml::Value = serde_yaml::from_str(
             r#"
@@ -703,6 +672,75 @@ config:
         let value: serde_yaml::Value = serde_yaml::from_str("manifest: 42\n").unwrap();
         let error = split_system_package_config(&value).unwrap_err();
         assert!(error.to_string().contains("must be a non-empty string"));
+    }
+
+    #[test]
+    fn deployment_instance_names_are_unique_across_sections() {
+        let valid: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+system:
+  scene: {}
+primitive:
+  - name: front_camera
+    path: camera
+  - name: wrist_camera
+    path: camera
+service:
+  - name: navigation
+    path: navigation
+"#,
+        )
+        .unwrap();
+        validate_deployment_instance_names(&valid).unwrap();
+
+        let duplicate: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+system:
+  scene: {}
+primitive:
+  - name: scene
+    path: camera
+service:
+  - name: scene
+    path: scene
+"#,
+        )
+        .unwrap();
+        let error = validate_deployment_instance_names(&duplicate)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate deployment instance name 'scene'"));
+    }
+
+    #[test]
+    fn deployment_instance_names_reject_outer_whitespace() {
+        let manifest: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+primitive:
+  - name: " front_camera "
+    path: camera
+"#,
+        )
+        .unwrap();
+        let error = validate_deployment_instance_names(&manifest)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("must not contain leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn deployment_package_instance_name_is_required() {
+        let manifest: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+primitive:
+  - path: camera
+"#,
+        )
+        .unwrap();
+        let error = validate_deployment_instance_names(&manifest)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("primitive[0] must declare a non-empty `name`"));
     }
 
     #[test]

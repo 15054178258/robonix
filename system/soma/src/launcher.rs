@@ -198,9 +198,9 @@ impl PackageLauncher {
                 }
             };
 
-        // Snapshot before spawn so wait_for_registration_core can
-        // tell us which new provider is OUR child (not some
-        // pre-existing one whose driver replied to a polling tick).
+        // Snapshot the expected instance's registration generation before
+        // spawn. Other providers may register concurrently; the shared waiter
+        // ignores them and only accepts target.name with a new generation.
         let before = match snapshot_provider_ids(atlas).await {
             Ok(s) => s,
             Err(e) => {
@@ -288,13 +288,13 @@ impl PackageLauncher {
         }
 
         let config_json = match serde_json::to_string(&target.config) {
-            Ok(value) => value,
+            Ok(config_json) => config_json,
             Err(error) => {
                 self.reap(pid).await;
                 return PackageStartupStatus::SpawnFailed {
                     command,
                     error: format!(
-                        "{who}: serialize config for deployment instance '{}': {error}",
+                        "serialize config for deployment instance '{}': {error}",
                         target.name
                     ),
                 };
