@@ -15,6 +15,21 @@ SCENE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeProtobufContractTests(unittest.TestCase):
+    def test_runtime_image_contains_the_pinned_generator_toolchain(self):
+        requirements = (
+            SCENE_ROOT / "docker" / "requirements" / "scene-base.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn("grpcio==1.80.0", requirements)
+        self.assertIn("grpcio-tools==1.76.0", requirements)
+        self.assertIn("protobuf==6.33.6", requirements)
+
+        dockerfile = (SCENE_ROOT / "docker" / "Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('import grpc_tools.protoc', dockerfile)
+        self.assertIn('"grpcio-tools": "1.76.0"', dockerfile)
+        self.assertNotIn('pip install --upgrade "protobuf>=', dockerfile)
+
     def test_launcher_generates_with_runtime_image_without_network(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

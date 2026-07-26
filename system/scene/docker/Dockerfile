@@ -182,9 +182,23 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         --retries 3 \
     && rm /tmp/requirements/scene-perception-heavy.txt
 
-# Force protobuf upgrade — host rbnx codegen emits >=7.35 protos;
-# the base ROS image ships an older runtime.
-RUN without-proxy pip install --upgrade "protobuf>=7.35"
+# Scene regenerates runtime protobuf stubs with this image's own compiler.
+# Validate the final dependency set after every pip layer so a resolver change
+# cannot produce an image that builds successfully but fails during boot.
+RUN python3 - <<'PY'
+from importlib.metadata import version
+
+expected = {
+    "grpcio": "1.80.0",
+    "grpcio-tools": "1.76.0",
+    "protobuf": "6.33.6",
+}
+actual = {name: version(name) for name in expected}
+if actual != expected:
+    raise RuntimeError(f"Scene protobuf environment mismatch: {actual} != {expected}")
+
+import grpc_tools.protoc  # noqa: F401, E402
+PY
 
 # pytorch3d (see requirements/scene-pytorch3d.txt to decide whether installing it or not.)
 # COPY requirements/scene-pytorch3d.txt /tmp/requirements/scene-pytorch3d.txt
