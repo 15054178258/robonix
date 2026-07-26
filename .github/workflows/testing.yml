@@ -377,6 +377,9 @@ jobs:
             auth.docker.io:443
             production.cloudflare.docker.com:443
 
+      - name: Configure runner-local Robonix home
+        run: echo "ROBONIX_HOME=$RUNNER_TEMP/robonix-home" >> "$GITHUB_ENV"
+
       - name: Select runner GPU
         run: |
           set -euo pipefail
@@ -1034,7 +1037,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sim-logs"
-          map_id="ci_scene_map_${RUN_KEY}"
+          map_id="ci_scene_map_${RUN_ID}"
           python3 "$GITHUB_WORKSPACE/testing/verify_scene_map_persistence.py" \
             --scene-url "http://127.0.0.1:${SCENE_WEB_PORT}" \
             --map-id "$map_id" \
@@ -1215,6 +1218,14 @@ jobs:
             >"$RUNNER_TEMP/sim-logs/sim-container-image.txt" 2>&1 || true
           # rbnx caps snapshot at end-of-run for post-mortem.
           rbnx caps --server "${ROBONIX_CI_ATLAS:-127.0.0.1:50051}" --json >"$RUNNER_TEMP/sim-logs/caps.final.json" 2>&1 || true
+          # Preserve boot logs before the shutdown step tears down the
+          # deployment directory.  Early Soma/provider failures otherwise
+          # leave only the supervisor tail in rbnx-boot.log.
+          if [ -d "$GITHUB_WORKSPACE/examples/webots/rbnx-boot/logs" ]; then
+            rm -rf "$RUNNER_TEMP/sim-logs/rbnx-boot-logs"
+            cp -a "$GITHUB_WORKSPACE/examples/webots/rbnx-boot/logs" \
+              "$RUNNER_TEMP/sim-logs/rbnx-boot-logs"
+          fi
 
       - name: Stop run resources
         if: always()

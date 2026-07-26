@@ -14,27 +14,44 @@ examples/webots/
 ├── primitives/                One device = one package.
 │   ├── tiago_chassis/         /amcl_pose + /cmd_vel  → chassis/{state, move}
 │   ├── tiago_camera/          /head_front_camera/*   → camera/{snapshot, depth_snapshot}
-│   ├── tiago_lidar/           /scanner               → lidar/snapshot
-│   └── audio_driver/          (separate, mic/spkr — old schema, not deployed yet)
+│   └── tiago_lidar/           /scanner               → lidar/snapshot
 ├── services/
 │   └── tiago_nav2/            Nav2 launch + ActionClient wrapper
 └── robonix_manifest.yaml      Top-level deploy manifest.
 ```
 
-Drivers run **inside** the sim container via `docker exec` so they share
-the simulator's DDS graph. They are NOT host-side processes; the host
-only needs `rbnx`, Docker, and an X11 display.
+The three simulator-specific drivers run **inside** the sim container via
+`docker exec` so they share the simulator's DDS graph. Reusable audio
+primitives are fetched from their SysWonder repositories by
+`robonix_manifest.yaml` and run on the host.
 
 ## Bring-up
 
 Two terminals only:
 
 ```bash
-# T1 — sim (Ctrl-C stops):
+# T1 — simulator (Ctrl-C stops log following only):
 bash examples/webots/sim/start.sh
 
 # T2 — robonix stack (whatever robonix_manifest.yaml declares):
 cd examples/webots
+rbnx boot
+```
+
+The commands above use the default host network. If the simulator uses a
+Docker bridge (for example, for parallel isolated runs), its Zenoh router is
+published only on host loopback. In that mode, start the host-side Robonix
+stack with `ROBONIX_ZENOH_ROUTER=tcp/127.0.0.1:<mapped-port>`; this setting is
+required even when `<mapped-port>` is the default `7447`:
+
+```bash
+# T1 — isolated simulator
+ROBONIX_SIM_NETWORK=bridge ROBONIX_SIM_ZENOH_PORT=17447 \
+  bash examples/webots/sim/start.sh
+
+# T2 — matching host-side deployment
+cd examples/webots
+export ROBONIX_ZENOH_ROUTER=tcp/127.0.0.1:17447
 rbnx boot
 ```
 
@@ -76,13 +93,19 @@ Then a third terminal for `rbnx chat`. `rbnx caps` lists the
 capabilities atlas knows about; `rbnx tools` lists the MCP tools
 the LLM agent can call.
 
-To tear everything down: Ctrl-C the `rbnx boot` terminal, OR from
-any other shell:
+The simulator and Robonix deployment have separate lifecycle owners. Stop both
+explicitly from another shell:
 
 ```bash
-cd examples/webots && rbnx shutdown    # SIGTERM each component's PGID
-bash sim/stop.sh                       # then stop the Webots container
+cd examples/webots
+rbnx shutdown     # stop only this Robonix deployment
+bash sim/stop.sh  # stop only the selected Webots Compose project and its RViz wrapper
 ```
+
+When the simulator was started with custom `ROBONIX_SIM_PROJECT` or
+`ROBONIX_SIM_CONTAINER` values, pass the same values to `sim/stop.sh`. The
+simulator stop command never searches for or terminates host-side Robonix
+processes.
 
 `rbnx shutdown` reads `rbnx-boot/state.json` (boot writes it
 incrementally as components come up) and tears them down in

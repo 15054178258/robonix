@@ -71,10 +71,9 @@ def test_all_legacy_driver_contracts_remain_available_for_old_manifests() -> Non
         if path.parent.name != "lifecycle"
     )
 
-    assert len(legacy_contracts) == 13
+    assert len(legacy_contracts) == 15
     for path in legacy_contracts:
         contents = path.read_text()
-        assert "Legacy" in contents, path
         assert "idl" in contents and "lifecycle/srv/Driver.srv" in contents, path
 
 

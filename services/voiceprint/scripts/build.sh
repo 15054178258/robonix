@@ -132,18 +132,29 @@ FLAGS=(--mcp)
 # The complete build directory was already removed above. A second clean here
 # would delete the freshly synchronized venv.
 echo "[build] rbnx codegen ${FLAGS[*]}"
-RBNX_CODEGEN_PYTHON="$PKG/$VENV/bin/python" \
-    PATH="$PKG/$VENV/bin:$PATH" \
-    rbnx codegen -p "$PKG" "${FLAGS[@]}"
+PATH="$PKG/$VENV/bin:$PATH" rbnx codegen -p "$PKG" "${FLAGS[@]}"
 
+# Codegen must use the same grpcio-tools/protobuf environment as runtime.
+# Import every generated module needed by service.py now, so a missing stub or
+# version mismatch fails at build time instead of timing out during boot.
 CODEGEN_PYTHONPATH="$PKG/$BUILD/codegen/proto_gen:$PKG/$BUILD/codegen/robonix_mcp_types"
 PYTHONPATH="$CODEGEN_PYTHONPATH:${PYTHONPATH:-}" "$VENV/bin/python" - <<'PY'
 import robonix_contracts_pb2
 import robonix_contracts_pb2_grpc
 import voiceprint_mcp
 import voiceprint_pb2
+import voiceprint_service.service
 
-print("[build] generated Voiceprint gRPC and MCP imports OK")
+for name in (
+    "RobonixServiceVoiceprintDriverServicer",
+    "RobonixServiceVoiceprintIdentifyServicer",
+    "RobonixServiceVoiceprintEnrollServicer",
+    "RobonixServiceVoiceprintListServicer",
+    "RobonixServiceVoiceprintDeleteServicer",
+):
+    assert hasattr(robonix_contracts_pb2_grpc, name), name
+
+print("[build] Voiceprint lifecycle, four RPC servicers, and MCP imports OK")
 PY
 
 # ── 4. Pre-warm ECAPA-TDNN weights from ModelScope (skip with SKIP_MODEL_DOWNLOAD=1) ─
