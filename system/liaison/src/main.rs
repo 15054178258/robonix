@@ -27,7 +27,7 @@ mod pb;
 mod voice;
 
 use access::{AccessControlConfig, AccessDecision};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use clap::Parser;
 use pb::contracts::{
     robonix_lifecycle_driver_client::RobonixLifecycleDriverClient,
@@ -107,7 +107,7 @@ impl SystemLifecycleDriver {
     /// to Atlas. Unknown commands and rejected Atlas transitions are errors.
     async fn transition(&self, command: u32) -> Result<&'static str> {
         let (state, label) = lifecycle_target(command)
-            .ok_or_else(|| anyhow!("unknown lifecycle command code {command}"))?;
+            .ok_or_else(|| anyhow::anyhow!("unknown lifecycle command code {command}"))?;
         let mut atlas = self.atlas.clone();
         atlas
             .set_lifecycle_state(&self.provider_id, state, "")
@@ -289,7 +289,9 @@ impl LiaisonPipeline {
                 user_id, reason, ..
             } => {
                 warn!("[liaison/access] text deny user={user_id}: {reason}");
-                return Err(anyhow!("access denied for user '{user_id}': {reason}"));
+                return Err(anyhow::anyhow!(
+                    "access denied for user '{user_id}': {reason}"
+                ));
             }
         }
         let (tx, rx) = mpsc::channel(64);
