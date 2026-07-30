@@ -611,9 +611,7 @@ pub async fn execute_start(
         ));
     }
 
-    let mut env = std::collections::HashMap::new();
-    env.insert("ROBONIX_ATLAS".to_string(), endpoint.clone());
-    env.insert("SCRIBE_LOG_DIR".to_string(), log_dir.display().to_string());
+    let mut env = base_start_environment(&package_root, &endpoint, &log_dir);
     if materialized_cfg_json.is_some() {
         output::sub_step("Config: will deliver via Driver(CMD_INIT) post-register");
     }
@@ -715,6 +713,21 @@ pub async fn execute_start(
 
     output::success(&format!("Package {} finished", manifest.package.name));
     Ok(())
+}
+
+fn base_start_environment(
+    package_root: &Path,
+    endpoint: &str,
+    log_dir: &Path,
+) -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::from([
+        ("ROBONIX_ATLAS".to_string(), endpoint.to_string()),
+        ("SCRIBE_LOG_DIR".to_string(), log_dir.display().to_string()),
+        (
+            "RBNX_PACKAGE_ROOT".to_string(),
+            package_root.display().to_string(),
+        ),
+    ])
 }
 
 /// Build the package-local Python import path without touching a colcon
@@ -1027,5 +1040,23 @@ mod tests {
         assert!(export.ends_with(":${PYTHONPATH:-}"));
         assert!(!root.join("rbnx-build/ws/install/setup.bash").exists());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn start_overrides_inherited_package_root_with_selected_package() {
+        let root = temp_root("package-root");
+        let log_dir = root.join("rbnx-build/logs");
+        let env = base_start_environment(&root, "127.0.0.1:50051", &log_dir);
+        let root_string = root.display().to_string();
+        let log_string = log_dir.display().to_string();
+
+        assert_eq!(
+            env.get("RBNX_PACKAGE_ROOT").map(String::as_str),
+            Some(root_string.as_str())
+        );
+        assert_eq!(
+            env.get("SCRIBE_LOG_DIR").map(String::as_str),
+            Some(log_string.as_str())
+        );
     }
 }

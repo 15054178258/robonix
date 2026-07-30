@@ -1,6 +1,6 @@
 # `system/scene` — live semantic + geometric map
 
-Robonix system service that maintains the **current best estimate** of what's in the robot's environment: per-`Object` records (stable id, fused pose, class, confidence, last_seen, point cloud), pairwise `Relation`s (`on` / `inside` / `near` / `reachable_by`), and a projected 2D occupancy grid from the mapping service. Exposes read-only MCP tools that Pilot calls during RTDL planning/execution, and a self-contained 2D + 3D web viewer.
+Robonix system service that maintains the **current best estimate** of what's in the robot's environment: per-`Object` records (stable id, fused pose, class, confidence, last_seen, point cloud), pairwise `Relation`s (`on` / `inside` / `near` / `reachable_by`), and a projected 2D occupancy grid from the mapping service. Exposes query tools for Pilot plus epoch-checked derived-object correction tools, and a self-contained 2D + 3D web viewer.
 
 This service is **NOT** a memory store (long-term recall belongs to memory services) and **NOT** a hardware controller. Current-state only. Reads observations; never writes back to the robot.
 
@@ -20,7 +20,8 @@ system/scene/
 │   └── start.sh                 docker run wrapper used by `rbnx boot`
 ├── scene_service/
 │   ├── service.py               entrypoint: atlas register + asyncio + FastMCP
-│   ├── mcp_tools.py             5 @mcp_contract handlers (thin wrappers)
+│   ├── mcp_tools.py             @mcp_contract handlers (thin wrappers)
+│   ├── object_mutations.py      epoch-checked label/delete/flush coordinator
 │   ├── web.py                   2D + 3D web viewer (Starlette + three.js)
 │   ├── state/                   ObjectRegistry, data assoc, snapshot
 │   ├── scene_graph/             relations: fast geometric loop (reachable_by) + image-grounded VLM (image_relations.py) + store
@@ -29,7 +30,6 @@ system/scene/
 │   │   ├── capabilities.py      hardware probe → perception tier (metric/visual/geometric)
 │   │   ├── perception_concept_graphs.py  perception pipeline (this file)
 │   │   └── perception_vlm.py    VLM fallback (no-depth deploys only)
-│   └── static/urdf/meshes/      Tiago STL meshes (kept around for future URDF viz)
 ```
 
 ## What it actually does
@@ -37,21 +37,23 @@ system/scene/
 **Perception tier.** Which pipeline runs is decided at startup by `ingest/capabilities.py` from the wired hardware, and logged once (`perception plan: tier=… detector=… grounding=… inputs=[…]`):
 
 - **metric** — RGB-D (+ intrinsics + pose) → ConceptGraphs below. Object-level 3D semantics, spatial relations, open-vocab queries.
-- **visual** — RGB only → `perception_vlm.py`. Approximate, region-level semantics; positions are coarse (no metric depth back-project).
-- **geometric** — no camera (LiDAR / 2D SLAM only) → no detector. The occupancy grid + `goal_near` BFS stay available; object/relation queries return empty.
+- **visual** — RGB only → `perception_vlm.py`. Approximate depth remains model-estimated, but spatial objects are emitted only when camera intrinsics, pose, extrinsics, and their destination frame are all available.
+- **geometric** — no camera (LiDAR / 2D SLAM only) → no detector. Occupancy-grid goal tools remain available once Scene has resolved the robot footprint from Soma; object/relation queries return empty.
 
 The metric pipeline is ConceptGraphs-style per-frame perception with 4 stages:
 
-1. **Detect.** YOLO-World v2 (open-vocab via CLIP text encoder) on the live RGB frame. Class list is a 55-entry indoor-office vocabulary; override at runtime via `SCENE_OPEN_VOCAB_CLASSES=cup,chair,...`.
+1. **Detect.** YOLO-World v2 (open-vocab via CLIP text encoder) on the live RGB frame. The class list comes from `perception.vocabulary`; `SCENE_OPEN_VOCAB_CLASSES` remains a compatibility fallback when Driver configuration is absent.
 2. **Segment.** MobileSAM, prompted with each YOLO bbox, produces a per-detection mask.
-3. **Lift to 3D.** Mask-aware depth backprojection through pinhole intrinsics gives a per-detection point cloud in camera-optical frame. The intrinsics `K` come **only** from the atlas-resolved `primitive/camera/intrinsics` contract — the real per-deployment camera, exactly as extrinsics come from the camera's tf2/URDF rather than a scene-side env var. There is no hardcoded-default fallback: guessing `K` scales every point by `fx/fy` and silently misplaces objects, so when no usable intrinsics are wired the detector *waits* (logs `waiting for camera intrinsics`) instead. The world transform comes from atlas-resolved contracts, not tf2: `T(world ← base_link)` from `service/map/pose` and `T(base_link ← camera_optical)` from `primitive/camera/extrinsics`, composed into a single 4×4. The world frame name is whatever `header.frame_id` the localizer publishes — never a hardcoded `"map"`. tf2 stays only as a last-resort fallback for legacy stacks where the camera primitive hasn't declared `extrinsics` yet (logged once via "no pose contract resolved"). Reading `/odom` directly is **NOT** acceptable — once SLAM corrects `map → odom`, the registry drifts away from rviz.
-4. **Match + merge.** Per-detection 512-d OpenCLIP ViT-B-32 image feature + 3D-AABB IoU drives the concept-graphs merge pipeline: `compute_spatial_similarities` + `compute_visual_similarities` + `aggregate_similarities` + `merge_detections_to_objects`. Three hard gates filter the agg_sim matrix:
+3. **Lift to 3D.** Mask-aware depth backprojection through pinhole intrinsics gives a per-detection point cloud in camera-optical frame. The intrinsics `K` come **only** from the atlas-resolved `primitive/camera/intrinsics` contract — the real per-deployment camera. There is no hardcoded-default fallback: guessing `K` scales every point by `fx/fy` and silently misplaces objects, so when no usable intrinsics are wired the detector *waits* (logs `waiting for camera intrinsics`) instead. The world transform comes from the robot's TF tree first: Scene asks for `T(world ← selected_camera_optical)` so the full URDF/static chain and SLAM's `map → odom` correction stay intact. Only when that TF lookup is unavailable does the compatibility path compose `T(world ← body)` from `service/map/pose` (or odom) with `T(body ← camera_optical)` from `primitive/camera/extrinsics`. The selected pose source determines `body`; the extrinsics parent must match that same frame. The world frame name is whatever `header.frame_id` the localizer publishes — never a hardcoded `"map"` once a sample exists.
+4. **Match + merge.** Per-detection 512-d OpenCLIP ViT-B-32 image feature + voxel point-cloud overlap drives the ConceptGraphs merge pipeline. Three hard gates filter the aggregate similarity matrix:
    * **Distance gate** — centroid > 1.5 m apart → never merge (kills "9 × 5 m bbox spanning the room" failure).
-   * **Same-class gate** — different YOLO class names → never merge (kills "potted_plant on cabinet collapses to one record").
-   * **Threshold** — agg_sim < 0.55 → spawn new object instead.
-5. **Project to registry.** A persistent `MapObjectList.uuid → ObjectRegistry.object_id` cache keeps registry IDs stable across ticks. Bounding boxes are yaw-only (numpy 2D PCA on the XY footprint, no Open3D OBB — `get_oriented_bounding_box(robust=True)` segfaults qhull on near-coplanar pcds), with 5–95 percentile extents to ignore depth-spike outliers.
+   * **Class gate** — exact labels or deployment-reviewed `confusable_class_groups` only; unrestricted cross-class merging is disabled by default.
+   * **Threshold** — aggregate similarity below 0.85 → spawn a new object instead.
+5. **Project to registry.** A persistent `MapObjectList.uuid → ObjectRegistry.object_id` cache keeps registry IDs stable across ticks, but only UUIDs carrying the current `image_idx` refresh `last_seen` and `observation_count`. An unmatched object becomes `missing` only after repeated healthy frames whose current depth image shows clear space behind its old location; out-of-FOV, occluded, disconnected-sensor, failed-model, and stale-transform cases remain unknown. Bounding boxes are yaw-only (numpy 2D PCA on the XY footprint, no Open3D OBB — `get_oriented_bounding_box(robust=True)` segfaults qhull on near-coplanar pcds), with 5–95 percentile extents to ignore depth-spike outliers.
 
-Periodic cleanup (every 30 ticks) runs concept-graphs's `denoise_objects` + `filter_objects` + `merge_overlap_objects` so duplicates from edge-case detections eventually collapse.
+Track labels use recent confidence-weighted evidence. A label remains
+provisional until it passes the configured support/share gates, and a stable
+label changes only after the challenger also clears the switch margin.
 
 ## Deployment targets (x86 / Jetson)
 
@@ -183,6 +185,33 @@ contract list in `scene_service/service.py` (`_SCENE_CONTRACTS`), asks Atlas for
 providers that implement those contracts, connects to their ROS 2 `topic_out`
 interfaces, and subscribes only to what the deployment actually exposes.
 
+For a robot with more than one camera, pin Scene to one RGB-D provider in the
+deployment manifest:
+
+```yaml
+system:
+  scene:
+    manifest: package_manifest.jetson-native.yaml
+    config:
+      camera_provider_id: front_rgbd_camera
+      web_port: 50107
+```
+
+The value is the camera package entry's `name` (and therefore its Atlas
+provider id). Scene resolves `rgb`, `depth`, `intrinsics`, and `extrinsics`
+from that same provider so streams and calibration from different cameras are
+never mixed. The selected provider must expose both `camera/rgb` and
+`camera/depth` for RGB-D perception. Omitting `camera_provider_id` preserves
+the legacy auto-discovery behaviour for single-camera deployments.
+
+Scene supports lifecycle initialization, activation, and clean shutdown.
+`CMD_DEACTIVATE` is not yet a pause operation: Scene rejects it as deferred and
+remains `ACTIVE`, because its ROS subscriptions, perception workers, and Web UI
+cannot currently be paused atomically. Use `CMD_SHUTDOWN` to stop Scene. A
+successful shutdown reply is sent only after perception, ROS, graph/background
+tasks, the Web UI serving task/socket, and the object store have all closed, so
+an immediate restart can rebind the same web port.
+
 The default RMW is Zenoh (`RMW_IMPLEMENTATION=rmw_zenoh_cpp`). For single-host
 deployments the default local router/session is used; advanced deployments can
 override it with `ROBONIX_ZENOH_ROUTER`, `ROBONIX_ZENOH_MODE`, and
@@ -196,7 +225,37 @@ Useful input contracts include:
 * `robonix/primitive/camera/intrinsics` (`sensor_msgs/CameraInfo`)
 * `robonix/primitive/camera/extrinsics` (`geometry_msgs/TransformStamped`)
 * `robonix/service/map/pose` (`geometry_msgs/PoseWithCovarianceStamped`)
+* `robonix/service/map/odom` (`nav_msgs/Odometry`, compatibility fallback)
 * `robonix/service/map/occupancy_grid` (`nav_msgs/OccupancyGrid`)
+
+Scene's robot marker and self context come primarily from
+`robonix/service/map/pose`, not from the camera and not from raw chassis odom.
+The mapping/localization provider must publish a globally corrected
+`PoseWithCovarianceStamped` for the configured robot body (`base_link` by
+default); Scene adopts its
+`header.frame_id` as the world frame. `service/map/odom` and TF2 are
+not equivalent pose sources: TF is authoritative, corrected pose is the first
+contract fallback, and raw odometry is the final contract fallback. Metric
+RGB-D projection resolves the selected camera
+frame directly through TF first. Only when that lookup is unavailable does
+Scene compose the pose with `primitive/camera/extrinsics`. In that fallback
+message, `header.frame_id` must be the expected robot body frame (`base_link`
+by default), `child_frame_id` must equal the selected camera optical frame, and
+`transform` is `T(parent ← child)`: it
+converts points from the camera optical frame into the parent frame. Scene
+rejects missing or mismatched frame ids instead of composing incompatible
+frames. Deployments with a complete URDF and TF tree should not publish a
+second transform with the opposite direction.
+
+For robots whose body frame is not `base_link`, set `base_frame` under
+`system.scene.config` (or `SCENE_BASE_FRAME`). This is an assertion about the
+body represented by the fallback pose and the required parent of camera
+extrinsics. If odometry is selected, its non-empty `child_frame_id` must match
+the assertion or that sample is rejected. When `base_frame` is omitted, a
+preferred `PoseWithCovarianceStamped` represents `base_link`; an odometry-only
+fallback uses that selected message's own `child_frame_id` (then `base_link` if
+the field is empty). An unselected odometry sample never changes the frame used
+for a preferred pose sample.
 
 If your camera frame is not the deployment default, override it when starting scene:
 
@@ -252,25 +311,263 @@ Hugging Face mirror endpoint (default `https://hf-mirror.com`); the canonical
 `https://huggingface.co` file URL is always tried as a fallback. Set
 `RBNX_HF_MIRROR=` to skip the mirror.
 
-## Configuration knobs (env vars)
+## Driver configuration
+
+These values belong under `system.scene.config.perception` in the deployment
+manifest. Durations are seconds, distances are metres, and frame counts are
+dimensionless. Explicit Driver configuration takes precedence over legacy
+environment variables.
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `period_s` | float, s | `0.6` | minimum interval between metric perception frames |
+| `confidence_threshold` | float, fraction | `0.30` | minimum YOLO-World confidence admitted to SAM and ConceptGraphs; valid range is `(0, 1]` |
+| `max_detections` | integer, detections/frame | `30` | maximum detector hypotheses retained per frame before segmentation and mapping |
+| `confirmation_min_unique_frames` | integer, distinct RGB-D frames | `2` | independent temporal evidence required before a newly created ConceptGraphs candidate is inserted into the persistent ObjectRegistry; repeated overlapping hypotheses from one frame count once, confirmed/rebound identities remain live, and `debug_clip_features=1` still exposes withheld candidates |
+| `confirmation_singleton_min_mean_confidence` | float, detector confidence `[0, 1]` | `0` | optional mean YOLO-confidence fast path for one-frame candidates; `0` disables it. The production default is disabled because Office v116 showed that even `0.65` admitted high-confidence table, monitor, and chair fragments as duplicate persistent objects; use multi-frame evidence instead |
+| `visible_miss_frames` | integer, frames | `3` | consecutive healthy, depth-verified absences required before marking an object `missing` |
+| `visibility_depth_margin_m` | float, m | `0.10` | measured depth along the same camera ray must be at least this far behind the projected stored-cloud surface to count as clear-space negative evidence; 10 cm rejects normal RGB-D/pose jitter while still detecting a newly exposed background |
+| `visibility_min_clear_samples` | integer, projected samples | `3` | minimum number of valid, spatially distributed stored-cloud samples that must show clear space before one healthy frame counts as a visible miss |
+| `visibility_min_clear_fraction` | float, fraction | `0.60` | minimum share of valid projected samples that must show clear space; closer occluders, similar-depth surfaces, depth holes, and out-of-view samples never count as clear |
+| `visibility_max_projected_samples` | integer, projected samples/object/frame | `25` | deterministic upper bound on stored-cloud samples checked for each unmatched object and healthy frame; must be at least `visibility_min_clear_samples` |
+| `object_ttl_s` | float, s | `30.0` | time after the last positive observation before a `missing` object is hard-deleted |
+
+`perception.geometry` controls metric RGB-D admission. All distances use SI
+metres; percentages are expressed on a 0–100 scale and fractions on a 0–1
+scale.
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `mask_erosion_px` | integer, image pixels | `1` | conservative SAM-mask boundary erosion; automatically falls back when erosion would erase a small valid object |
+| `min_depth_m` | float, m | `0.15` | nearest accepted depth sample |
+| `max_depth_m` | float, m | `6.0` | farthest accepted depth sample |
+| `depth_mad_scale` | float, dimensionless | `3.5` | robust median-absolute-deviation multiplier used to reject depth spikes inside each mask |
+| `depth_min_band_m` | float, m | `0.12` | minimum half-width of the accepted per-mask depth band |
+| `frame_dbscan` | boolean | `true` | run ConceptGraphs DBSCAN noise removal on each newly back-projected object cloud |
+| `require_occupancy_bounds` | boolean | `true` | withhold authoritative objects until a same-frame-id occupancy grid exists, then reject off-map clouds |
+| `map_bounds_margin_m` | float, m | `0.25` | tolerance outside the current occupancy-grid rectangle |
+| `map_max_outside_fraction` | float, fraction | `0.20` | maximum fraction of object-cloud points allowed outside that tolerant map rectangle |
+| `bbox_low_percentile` | float, % | `5.0` | lower robust point-cloud quantile used for the yaw-aligned 3D box |
+| `bbox_high_percentile` | float, % | `95.0` | upper robust point-cloud quantile used for the yaw-aligned 3D box |
+| `max_bbox_extent_m` | float, m | `3.0` | reject a per-frame object hypothesis when any robust 3D box dimension exceeds this deployment limit |
+| `rebase_map_corrections` | boolean | `false` | compatibility mode only for a provider that explicitly changes the coordinate basis of its world frame without changing the frame id; keep this disabled for the standard ROS `map→odom→base_link` chain because a changing `map←odom` corrects live odometry and must not move historical points already expressed in `map` |
+
+`perception.geometry.surface_snap` is a default-off correction for thin,
+wall-mounted surfaces that are visible in RGB but whose depth samples land on
+geometry behind them (for example, transparent glass). It changes only the
+per-frame cloud's XY translation along the estimated surface normal, before
+the normal ConceptGraphs association and merge. It never changes yaw, extent,
+Z, track identity, or the occupancy map. The correction is applied only when a
+same-frame occupancy line is dominant, long enough, close enough, and supported
+by enough occupied cells.
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `labels` | list of strings | `[]` | canonical detector labels eligible for correction; empty disables surface snap |
+| `max_distance_m` | float, m | `0.60` | maximum normal distance from the measured cloud centre to a candidate occupied line |
+| `tangent_padding_m` | float, m | `0.25` | extra occupied-map search distance beyond each end of the cloud's long XY axis |
+| `min_shift_m` | float, m | `0.05` | minimum normal correction; smaller offsets are treated as already supported |
+| `min_support_cells` | integer, occupied cells | `30` | minimum occupied cells in the dominant parallel line |
+| `min_dominant_share` | float, fraction | `0.55` | minimum share of nearby candidate cells belonging to the dominant parallel line |
+| `min_tangent_coverage` | float, fraction | `0.50` | minimum dominant-line span divided by the measured cloud's long-axis extent |
+| `occupancy_threshold` | integer, occupancy probability % | `50` | minimum OccupancyGrid cell value considered occupied; valid range is `[1, 100]` |
+
+`perception.vocabulary` owns the YOLO-World prompt vocabulary. Labels are
+case-normalized and de-duplicated while preserving order.
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `classes` | list of strings | built-in indoor vocabulary | optional full replacement of the detector vocabulary; an explicitly empty list is invalid |
+| `additional_classes` | list of strings | `[]` | deployment-specific labels appended to `classes` or the built-in vocabulary |
+
+`perception.label` converts per-frame classifications into track-level label
+evidence. Observation confidence is the weight; a track's public label changes
+only after the challenger clears every configured gate.
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `history_size` | integer, observations | `20` | maximum recent class observations retained in the label vote |
+| `min_switch_observations` | integer, observations | `2` | minimum observations supporting a label before it is non-provisional or may replace the current label |
+| `min_winner_share` | float, fraction | `0.55` | minimum share of total confidence-weighted evidence required by the winner |
+| `switch_margin` | float, fraction | `0.15` | winner must exceed the current label by at least this fraction of total weighted evidence |
+| `aliases` | string-to-string mapping | `{}` | deployment-reviewed detector synonym to canonical label mapping; both labels must exist in the resolved vocabulary and alias chains are invalid |
+
+`perception.label.clip_rerank` is an optional, default-off second opinion for
+small, reviewed confusion sets. It reuses the per-mask OpenCLIP image feature
+already produced by ConceptGraphs; it does not load another model or rescore
+unlisted classes. Symmetric `groups` are appropriate only when every member may
+be reconsidered as every other member. Source-specific `routes` are safer for
+one-way detector confusions: only an object whose current label equals the
+route key is reconsidered. In either form, a label changes only when another
+configured candidate clears both cosine-similarity gates.
+
+For persistent objects only, `persistent_geometry` may add a positive score
+bonus to a configured candidate whose robust yaw-only 3D extent satisfies all
+of that label's SI-unit constraints. An optional `source_labels` allow-list
+limits that evidence to reviewed current-label ambiguity domains, so a
+candidate shared by an unrelated route does not inherit the bonus. It never
+penalizes another label, never changes the ConceptGraphs association class, and
+is not used for per-frame detection matching. A provisional object may expose
+the geometry-supported public label, but remains provisional and therefore
+non-navigation-grade until the normal observation threshold is met.
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `groups` | list of string lists or group mappings | `[]` | mutually disjoint label sets eligible for crop-level CLIP reranking; a mapping has `labels` and an optional group-specific `min_margin`; empty disables the feature |
+| `routes` | source-label to string list or route mapping | `{}` | source-specific candidate sets; each value must include its source key and at least one alternative, and a source may not also belong to a symmetric group |
+| `prompts` | label to list of strings | generated from label | optional positive text prompts averaged into one normalized prototype per label referenced by a group or route |
+| `min_score` | float, cosine similarity `[-1, 1]` | `0.20` | minimum winning image/text similarity required to replace the YOLO-World label |
+| `min_margin` | float, cosine-similarity difference `[0, 2]` | `0.04` | global minimum winning score minus current-label score required for replacement; inherited by groups that omit their own value |
+| `groups[].labels` | list of strings | required for mapping form | labels in this mutually exclusive visual confusion group |
+| `groups[].min_margin` | float, cosine-similarity difference `[0, 2]` | global `min_margin` | optional threshold for this group; use only when measured validation shows that its score distribution differs from other groups |
+| `routes.<source>.labels` | list of strings | required for mapping form | candidates evaluated only when YOLO-World's current label is `<source>`; the list must include `<source>` |
+| `routes.<source>.min_margin` | float, cosine-similarity difference `[0, 2]` | global `min_margin` | optional threshold measured for this source-specific route |
+| `persistent_geometry.score_bonus` | float, score `[0, 2]` | `0.0` | positive score added to a candidate only when all of its configured persistent-geometry constraints pass; zero disables geometry evidence |
+| `persistent_geometry.labels.<label>.source_labels` | non-empty list of strings | unset | optional current-label allow-list; the candidate bonus is available only when the persistent object's current label is listed, and every listed source must have a configured group or route that can reach `<label>` |
+| `persistent_geometry.labels.<label>.min_horizontal_extent_m` | float, m | unset | optional inclusive lower bound on the robust persistent object's larger horizontal box dimension |
+| `persistent_geometry.labels.<label>.max_horizontal_extent_m` | float, m | unset | optional inclusive upper bound on the robust persistent object's larger horizontal box dimension |
+
+`perception.association` controls when differently labelled detections may
+share one physical-object track. The safe default is exact-label association.
+Nearby geometry alone is insufficient because distinct objects are often
+co-located (for example, a cup on a table).
+
+| Key | Type / unit | Default | Meaning |
+|---|---|---|---|
+| `confusable_class_groups` | list of string lists | `[]` | reviewed detector-confusion groups whose members may belong to one physical track, such as `["monitor", "television"]`; this changes identity association only and does **not** declare the public labels semantically equivalent; every member must exist in the resolved vocabulary |
+| `allow_cross_class_merge` | boolean | `false` | legacy emergency escape hatch that permits unrestricted cross-class association and geometric collapse; not recommended for normal deployments |
+| `exact_duplicate_centroid_max_m` | float, m | `0.15` | maximum separation between 5–95 percentile robust cloud centers for differently labelled tracks to be considered duplicate hypotheses |
+| `exact_duplicate_min_voxel_coverage` | float, fraction | `0.40` | minimum **bidirectional** cloud coverage within the 26 neighboring cells of each 2.5 cm ConceptGraphs voxel; both directions must pass, so a small object merely contained by furniture is rejected |
+| `exact_duplicate_max_extent_ratio` | float, ratio | `1.50` | maximum ratio on every 5–95 percentile cloud extent axis; center, coverage, and all three extent axes must pass before tolerant support is admitted to the normal ConceptGraphs visual merge gate |
+| `coobserved_duplicate_min_shared_frames` | integer, frames | `3` | minimum frames in which two cross-label tracks were detected simultaneously before repeated image evidence may identify them as duplicate hypotheses |
+| `coobserved_duplicate_min_median_iou` | float, fraction | `0.85` | minimum median 2D bbox IoU over all shared frames; using the median rejects one-frame accidental overlap |
+| `coobserved_duplicate_max_extent_ratio` | float, ratio | `2.0` | maximum ratio on every robust 3D cloud-extent axis for the repeated co-observation gate; it reuses `exact_duplicate_centroid_max_m` and the normal ConceptGraphs point-overlap threshold |
+| `coobserved_duplicate_min_visual_similarity` | float, cosine similarity `[-1, 1]` | `0.90` | minimum CLIP similarity between the two accumulated tracks before the repeated co-observation gate exposes them to the normal ConceptGraphs merge |
+| `same_class_centroid_max_m` | float, m | `0.15` | maximum robust-center separation for two same-label or reviewed-group tracks to be considered the same physical object; `0` disables this cleanup |
+| `same_class_min_voxel_coverage` | float, fraction | `0.50` | minimum bidirectional tolerant voxel coverage for same-class cleanup; proximity without shared physical support never merges |
+| `same_class_max_extent_ratio` | float, ratio | `1.75` | maximum ratio on every robust cloud-extent axis for same-class cleanup, preventing contained tabletop objects and differently sized nearby furniture from collapsing |
+| `same_class_disjoint_min_unique_frames` | integer, perception frames per track | `2` | minimum independent observations required on **each** same-class track before the zero-voxel-overlap fallback may be considered |
+| `same_class_disjoint_max_frame_gap` | integer, perception frames | `1` | maximum distance between the nearest observations of two disjoint track histories; shared-frame histories are rejected by this fallback |
+| `same_class_disjoint_max_center_major_extent_ratio` | float, dimensionless ratio | `0.20` | maximum robust 3D center separation divided by the smaller track's largest robust extent; this scale gate prevents equally close but genuinely separate small objects from merging |
+| `same_class_disjoint_min_visual_similarity` | float, cosine similarity `[-1, 1]` | `0.85` | minimum accumulated CLIP similarity for adjacent-frame, disjoint-history evidence; the ordinary metre and per-axis extent gates still apply |
+| `same_class_merge_interval_ticks` | integer, perception ticks | `1` | cleanup cadence; `1` verifies same-class fragments after every completed perception tick so final-frame duplicates are not left behind |
+| `identity_rebind_max_distance_m` | float, m | `0.45` | maximum 3D center displacement for a new ConceptGraphs UUID to reclaim a soft-evicted, restored, or same-tick orphan Registry identity; this is deliberately tighter than furniture-scale multi-view association so a one-frame hypothesis cannot steal a stale same-class ID across the room; `0` disables identity rebinding |
+
+```yaml
+system:
+  scene:
+    config:
+      # Scene receives only this nested Driver configuration mapping.
+      # Package/runtime selectors remain siblings of `config`.
+      perception:
+        period_s: 0.6
+        confidence_threshold: 0.30
+        max_detections: 30
+        confirmation_min_unique_frames: 2
+        confirmation_singleton_min_mean_confidence: 0.0
+        visible_miss_frames: 3
+        visibility_depth_margin_m: 0.10
+        visibility_min_clear_samples: 3
+        visibility_min_clear_fraction: 0.60
+        visibility_max_projected_samples: 25
+        object_ttl_s: 30.0
+        vocabulary:
+          # Omit `classes` to retain the built-in indoor vocabulary.
+          additional_classes: []
+        label:
+          history_size: 20
+          min_switch_observations: 2
+          min_winner_share: 0.55
+          switch_margin: 0.15
+          clip_rerank:
+            groups:
+              - labels: [window, picture frame]
+                min_margin: 0.01
+            routes:
+              chair:
+                labels: [chair, monitor]
+                min_margin: 0.02
+            prompts: {}
+            persistent_geometry:
+              score_bonus: 0.06
+              labels:
+                monitor:
+                  source_labels: [monitor, television]
+                  max_horizontal_extent_m: 0.68
+            min_score: 0.20
+            min_margin: 0.04
+          aliases:
+            plant: potted plant
+        association:
+          confusable_class_groups:
+            - [sofa, couch]
+          allow_cross_class_merge: false
+          exact_duplicate_centroid_max_m: 0.15
+          exact_duplicate_min_voxel_coverage: 0.40
+          exact_duplicate_max_extent_ratio: 1.50
+          coobserved_duplicate_min_shared_frames: 3
+          coobserved_duplicate_min_median_iou: 0.85
+          coobserved_duplicate_max_extent_ratio: 2.0
+          coobserved_duplicate_min_visual_similarity: 0.90
+          same_class_centroid_max_m: 0.15
+          same_class_min_voxel_coverage: 0.50
+          same_class_max_extent_ratio: 1.75
+          same_class_disjoint_min_unique_frames: 2
+          same_class_disjoint_max_frame_gap: 1
+          same_class_disjoint_max_center_major_extent_ratio: 0.20
+          same_class_disjoint_min_visual_similarity: 0.85
+          same_class_merge_interval_ticks: 1
+          identity_rebind_max_distance_m: 0.45
+        geometry:
+          mask_erosion_px: 1
+          min_depth_m: 0.15
+          max_depth_m: 6.0
+          depth_mad_scale: 3.5
+          depth_min_band_m: 0.12
+          frame_dbscan: true
+          require_occupancy_bounds: true
+          map_bounds_margin_m: 0.25
+          map_max_outside_fraction: 0.20
+          bbox_low_percentile: 5.0
+          bbox_high_percentile: 95.0
+          max_bbox_extent_m: 3.0
+          surface_snap:
+            # Empty by default. Enable only labels reviewed for this sensor.
+            labels: []
+            max_distance_m: 0.60
+            tangent_padding_m: 0.25
+            min_shift_m: 0.05
+            min_support_cells: 30
+            min_dominant_share: 0.55
+            min_tangent_coverage: 0.50
+            occupancy_threshold: 50
+```
+
+## Legacy environment and model knobs
 
 | Env | Default | Notes |
 |---|---|---|
-| `SCENE_OPEN_VOCAB_CLASSES` | (55-entry default) | comma-separated YOLO-World class list |
+| `SCENE_OPEN_VOCAB_CLASSES` | (105-entry default) | comma-separated YOLO-World class list |
 | `SCENE_CG_FORCE_CPU` | `` | set to `1` to force CPU mode (~3× slower) |
 | `SCENE_PERCEPTION_WAIT_S` | `30` | how long to wait for camera providers before falling back |
+| `SCENE_POSE_MAX_AGE_S` | `2.0` | maximum receipt age in seconds for pose/odometry used in camera-to-world projection; stale samples withhold detections |
 | `SCENE_YOLO_WORLD_WEIGHTS` | `/opt/models/yolov8l-world.pt` | path inside container |
 | `SCENE_MOBILE_SAM_WEIGHTS` | `/opt/models/mobile_sam.pt` | |
 | `SCENE_CLIP_MODEL` / `SCENE_CLIP_PRETRAINED` | `ViT-B-32` / staged `open_clip_pytorch_model.bin` | Local checkpoint; build.sh downloads it before Docker/native build. |
-| `SCENE_CG_MERGE_THRESHOLD` | `0.55` | per-tick merge threshold |
-| `SCENE_CG_MAX_MERGE_DIST_M` | `1.5` | hard distance gate |
+| `SCENE_CG_MERGE_THRESHOLD` | `0.85` | per-tick merge threshold |
+| `SCENE_CG_MAX_MERGE_DIST_M` | `1.5` | absolute upper bound, in metres, for per-frame detection-to-track centroid association |
+| `SCENE_CG_ONE_TO_ONE_ASSOCIATION` | `true` | require each persistent track to consume at most one detection from a camera frame; unmatched detections follow ConceptGraphs' normal new-track path |
+| `SCENE_CG_ADAPTIVE_MERGE_DISTANCE` | `true` | tighten the absolute distance bound using the measured horizontal extents of the detection and track |
+| `SCENE_CG_ADAPTIVE_MERGE_MIN_DIST_M` | `0.45` | lower clamp, in metres, for the adaptive centroid-distance gate |
+| `SCENE_CG_ADAPTIVE_MERGE_EXTENT_SCALE` | `0.80` | dimensionless multiplier applied to the geometric mean of the two horizontal bbox diagonals |
 | `SCENE_CG_OBJ_MIN_POINTS` | `20` | periodic-cleanup cull gate; raise to drop sparse/thin objects, lower to keep them (thin objects like keyboards backproject to sparse clouds) |
-| `SCENE_CG_CROSS_CLASS_CENTROID_MAX_M` | `0.5` | per-tick class-gate bypass radius: a detection within this of an existing object may merge despite a different class label (handles YOLO label flicker on one fixture) |
-| `SCENE_CG_CROSS_CLASS_IOU_THRESH` / `SCENE_CG_CROSS_CLASS_OVERLAP_THRESH` | `0.30` / `0.50` | periodic class-agnostic collapse: fold two records when AABB IoU ≥ first **or** one-inside-other overlap ≥ second, regardless of class/visual sim. Lower to be more aggressive on a flickering desk (`chair` vs `table` split) |
+| `SCENE_CG_ALLOW_CROSS_CLASS_MERGE` | `false` | compatibility switch for unrestricted cross-class association/collapse; Driver `perception.association.allow_cross_class_merge` takes precedence |
+| `SCENE_CG_CROSS_CLASS_CENTROID_MAX_M` | `0.5` | legacy proximity threshold, effective only when unrestricted cross-class merging is explicitly enabled |
+| `SCENE_CG_CROSS_CLASS_IOU_THRESH` / `SCENE_CG_CROSS_CLASS_OVERLAP_THRESH` | `0.30` / `0.50` | legacy class-agnostic collapse thresholds, effective only when unrestricted cross-class merging is explicitly enabled |
 | `SCENE_CG_MERGE_OVERLAP_THRESH` / `SCENE_CG_MERGE_VISUAL_SIM_THRESH` | `0.50` / `0.65` | periodic `merge_overlap` pass: fold pairs with pcd-overlap ≥ first **and** CLIP cosine ≥ second |
 | `SCENE_CG_SAME_CLASS_MERGE_DIST_M` | `0.4` | lenient dedup: fold two SAME-class (or same `SCENE_CG_MERGE_CLASS_GROUPS` bucket) records whose centroids are within this distance, regardless of visual sim (kills "one keyboard → three"). `0` disables |
 | `SCENE_CG_MERGE_CLASS_GROUPS` | `` | opt-in confusable-class reconciliation, e.g. `chair,table,desk;sofa,couch` — listed classes share one merge bucket so label flicker across the group collapses while distinct, distant objects stay separate. Empty = off (never relabels) |
-| `SCENE_OBJECT_TTL_SEC` | `30` | how long a soft-evicted (`missing`) object is kept so a re-detection can re-bind its id + observation_count before it is hard-pruned; decouples object identity from per-tick uuid churn |
+| `SCENE_OBJECT_TTL_SEC` | unset | compatibility override for `perception.object_ttl_s`; new deployments should use Driver configuration |
 | `SCENE_GRAPH_IMAGE_RELATIONS` | `true` | VLM-primary relations: one image-grounded VLM call (projected numbered boxes) owns relational + semantic edges. `false` forces the legacy text-only per-pair inference (also the automatic fallback when no camera frame bundle is available) |
 | `SCENE_GRAPH_IMAGE_MAX_DIM` | `960` | longest-side pixel cap for the annotated frame sent to the VLM; bounds image token cost |
 | `SCENE_PORT` / `SCENE_WEB_PORT` | `50106` / `50107` | gRPC + web UI ports |
@@ -280,8 +577,6 @@ Hugging Face mirror endpoint (default `https://hf-mirror.com`); the canonical
 | `SCENE_MAP_ID` | `default` | FALLBACK map binding: mapping's latched `robonix/service/map/lifecycle` broadcast wins when present at startup; this env (below manifest `map_id`) applies when mapping isn't up yet (normal full-boot order) or doesn't broadcast |
 | `SCENE_MAP_BINDING_WAIT_S` | `3.0` | how long the startup probe waits for the lifecycle contract to appear on atlas before falling back to static binding; `0` disables the probe |
 | `SCENE_ANNOTATIONS_DIR` | `/data/robonix/scene_annotations` | per-map JSON files holding user annotations (rooms / POIs); host-mounted like the object DB |
-| `SCENE_MAP_META_DIR` | sibling `scene_maps/` of the annotations dir | epoch sidecar files pairing each saved map with the object-snapshot partition written at its Save (see "Map library") |
-| `SCENE_RESTORE_ON_START` | `false` | LEGACY mode: bind the startup map id, restore its objects at boot, and let the scene-graph builder persist continuously. Default off — a boot starts a fresh live session and objects are only persisted by an explicit Save |
 | `VLM_REASONING_EFFORT` | `` (unset) | opt-in, forwarded to all scene VLM/LLM calls (relation inference + VLM perception): `minimal`\|`low`\|`medium`\|`high`. **Unset → the field is omitted**, so non-reasoning models and strict endpoints are unaffected. Set `minimal` (= no thinking) to keep a reasoning `VLM_MODEL` (e.g. `doubao-seed-2-1-pro`) answering in ~2 s instead of timing out |
 
 ## Object memory (Save/Load snapshots)
@@ -299,20 +594,10 @@ file/process from `system/memory`'s memsearch DB — and lives under the
 host-mounted `/data/robonix`, which also makes the scene-graph JSON caches
 survive boots.
 
-`SCENE_RESTORE_ON_START=true` selects the LEGACY mode instead: the registry
-warm-restores the startup binding's partition at boot and the scene-graph
-builder persists continuously under it. This mode assumes the map frame never
-changes across those boots — the operator owns that guarantee. Don't mix it
-with map-UI Saves: a Save purges the bare partition the legacy restore reads
-(its rows move into the Save's snapshot), so the next legacy boot restores
-nothing until the builder repopulates.
-
-An object's pose is only meaningful in the exact `map` frame it was observed
-in, so persistence is partitioned by **snapshot**, not merely by map name:
-every Save writes into a fresh partition and restore loads exactly the
-partition saved with the loaded artifact — two builds of a same-named map can
-never mix. The same `object_id` may exist in several snapshots without
-colliding.
+Persistence is partitioned by the map binding: an object's pose is only
+meaningful in the `map` frame of the SLAM map it was observed on, so restore
+loads exactly the current map's objects and never mixes two maps. The same
+`object_id` may exist on different maps without colliding.
 
 The binding itself (`scene_service/map_binding.py`) is learned at startup with
 this precedence: mapping's latched `robonix/service/map/lifecycle` broadcast
@@ -321,17 +606,11 @@ this precedence: mapping's latched `robonix/service/map/lifecycle` broadcast
 `"default"`. The broadcast needs the generated `map` interface package
 (`rbnx codegen --ros2` → colcon overlay, built by `scripts/build.sh`, sourced
 by the container entrypoint); without it scene falls back to static binding
-with a warning. At runtime scene WATCHES the broadcast and reacts to a frame
-epoch change: a `generation` bump on the bound map (mapping reset / re-init
-under scene) **flushes the derived objects** from the registry — their stored
-map-frame coordinates are no longer anchored, and re-observation rebuilds them
-in the new frame — and flags room annotations stale for user confirmation
-(user assets are never deleted automatically). A broadcast naming a different
-map (loaded outside scene's map UI) also flushes stale objects, but scene
-cannot restore the new map's semantic state from there — the log tells the
-operator to Load it in the map UI (or restart scene). A Load performed through
-the map UI updates the same live binding the watcher tracks, so it never
-registers as drift.
+with a warning. At runtime scene only WATCHES the broadcast: if mapping's
+identity or `generation` (bumped when the map origin may have changed: reset /
+mapping-mode session start) drifts from the startup binding, scene logs a
+warning and keeps its binding — reacting (flush + re-anchor) is the planned
+lifecycle linkage (P3).
 
 ## User annotations (rooms / POIs)
 
@@ -370,55 +649,28 @@ as breaking.** The full annotation list also rides along in `GET /api/state`
 one poll. There is deliberately no atlas/MCP surface yet — exposing rooms to
 Pilot (scene-graph `in_room` edges) is a planned follow-up.
 
-## Map library (Save / Load / Delete)
-
-The `/user` page's map panel drives a scene-owned facade over the map
-capabilities (`POST /api/maps/{save,load,delete}`, `GET /api/maps`,
-`POST /api/maps/pose_estimate`): mapping keeps the spatial artifact, scene
-keeps the matching semantic state, and the facade moves both together so "a
-map" means geometry + objects + rooms as one unit.
-
-**Epoch rule** — the invariant behind every path here: *objects are only ever
-restored from the snapshot written together with the loaded artifact.* Each
-Save allocates a fresh object partition (`<map_id>__s<seq>`), writes the live
-registry into it, commits a sidecar file (`SCENE_MAP_META_DIR`) pointing at
-it only after the write verifies complete, and then purges the previous
-snapshot. Each Load reads the sidecar and restores exactly that partition. A
-map without a sidecar (saved before this mechanism, or a foreign DB) restores
-**no objects** — response field `semantic_snapshot` says so — because rows of
-unknown epoch may anchor to a map frame that no longer exists (the off-map
-"ghost object" bug). Re-save the map to create its snapshot.
-
-Save refuses (409) three epoch hazards rather than corrupting state silently:
-updating an existing map's semantics **from a still-running mapping session**
-(the artifact froze at the original Save while the live frame kept drifting —
-load it in localization mode instead, or delete and re-save), saving onto
-a map **whose annotations this session never loaded** (the carry would
-overwrite previously saved rooms; load first), and saving **while scene's
-semantic state may not match the map mapping runs** — after a Load that did
-not complete, or after mapping switched maps outside the facade — until a
-Load reports success (the 409 detail starts with `save blocked:`). A Save
-whose object snapshot fails to commit returns 502 with
-`partial: "spatial_saved_object_snapshot_failed"`: the sidecar still points
-at the previous snapshot, and the detail names the recovery (retry, or for a
-fresh mapping-session save: delete and save anew). Load is transactional on
-the occupancy grid AND the snapshot: scene rebinds rooms/objects only after
-observing a fresh grid from the loaded map, a registry-flush or
-snapshot-restore failure aborts the load (502) with the previous binding and
-annotation partition kept, and Delete removes the artifact, the annotation
-file, the sidecar, and every object partition of the map.
-
 ## Capabilities exposed
 
 | Contract                                       | Tool name        | What it does                                                        |
 |------------------------------------------------|------------------|---------------------------------------------------------------------|
-| `robonix/system/scene/list_objects`            | `list_objects`   | Flat list of every currently-tracked object (id, label, x,y,z, last_seen). LLM filters client-side. |
-| `robonix/system/scene/goal_near`               | `goal_near`      | Map-frame approach pose near a registered object (id -> reachable + x + y + yaw + reason). Pass to `navigation/navigate`. |
+| `robonix/system/scene/list_objects`            | `list_objects`   | Flat list of every currently-tracked object plus the atomic `map_id` and `generation` required by mutation calls. |
+| `robonix/system/scene/get_robot_context`       | `get_robot_context` | One coherent robot pose, room/area containment, and nearby-object snapshot. |
+| `robonix/system/scene/goal_near`               | `goal_near`      | Footprint-safe approach pose near a registered object. Pass to `navigation/navigate`. |
+| `robonix/system/scene/goal_room`               | `goal_room`      | Footprint-safe pose inside a room annotation. |
 | `robonix/system/scene/get_scene_graph`         | `get_scene_graph` | Current semantic graph nodes and relation edges. |
 | `robonix/system/scene/get_object_context`      | `get_object_context` | One object's graph context plus nearby objects and directly related edges. |
 | `robonix/system/scene/list_relations`          | `list_relations` | Relation edges, optionally filtered by relation type. |
+| `robonix/system/scene/update_object_label`     | `update_object_label` | Apply a sticky operator label correction in an asserted map epoch. |
+| `robonix/system/scene/update_object_geometry`  | `update_object_geometry` | Replace one pose/yaw-only bbox in metres/radians; provenance-marked and non-navigation-grade. |
+| `robonix/system/scene/delete_object`           | `delete_object` | Delete one incorrect derived object in an asserted map epoch. |
+| `robonix/system/scene/flush_objects`            | `flush_objects` | Clear all derived objects while preserving the robot and user annotations. |
 
 These are MCP-only (transport=mcp). Schemas auto-derive from the IDL via `robonix-api`'s `@mcp_contract`. Example:
+
+Both goal tools resolve `robonix/system/soma/footprint` through Atlas and use
+the returned polygon. Until Soma publishes valid geometry, they fail closed
+with `Soma footprint unavailable`; Scene never substitutes a simulator-sized
+disc. The web state exposes the same polygon as `robot_footprint`.
 
 ```bash
 curl -s http://127.0.0.1:50106/mcp/ -H "Content-Type: application/json" \
@@ -426,6 +678,44 @@ curl -s http://127.0.0.1:50106/mcp/ -H "Content-Type: application/json" \
      -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
          "name":"list_objects","arguments":{}}}'
 ```
+
+### Derived-object correction
+
+Every write is optimistic-concurrency checked against Scene's map-frame epoch:
+
+1. Call `list_objects` and keep its `map_id` and `generation` (`-1` means the
+   mapping provider does not expose a generation).
+2. Call `update_object_label`, `update_object_geometry`, `delete_object`, or
+   `flush_objects` with those exact values.
+3. If mapping changed in between, the tool raises an error. Refresh
+   `list_objects` and decide again; Scene never applies a stale correction to
+   a new coordinate frame.
+
+`update_object_label` changes semantics only; it installs an operator override
+that is not replaced by later model votes. Set `clear_override=true` to restore
+the model label state captured immediately before the first operator edit
+(`label` is then ignored). `update_object_geometry` accepts
+`x`, `y`, `z`, `size_x`, `size_y`, and `size_z` in metres plus `yaw` in
+radians. Its `frame_id` must exactly match the object's current world frame.
+Because a hand-authored bbox has no supporting RGB-D cloud, Scene records it as
+`geometry_source=operator_bbox`, exposes zero supporting points/views, and
+forces `navigation_grade=false`; delete and re-observe the object to regain
+measured navigation geometry. `flush_objects` clears detector tracks,
+non-robot registry objects, derived surfaces, and relation/caption caches
+together. It does not delete the robot self-object, room/POI annotations, the
+occupancy map, or mapping state.
+
+`persist_to_snapshot=false` changes only the current runtime. With
+`persist_to_snapshot=true`, Scene also updates the currently committed semantic
+snapshot; the call fails before mutation when the map has not been saved yet.
+This explicit flag prevents a temporary debugging correction from silently
+rewriting saved semantics while still allowing an operator to prevent a bad
+object from returning after reload.
+
+The `/user` page exposes the same four operations for each derived object. Its
+“persist to saved snapshot” checkbox maps directly to
+`persist_to_snapshot`; stale epochs return HTTP 409, unknown object IDs return
+404, and invalid labels/geometry return 400.
 
 ## Web UI quick tour
 
@@ -439,7 +729,7 @@ curl -s http://127.0.0.1:50106/mcp/ -H "Content-Type: application/json" \
 * `/api/camera` — JSON: latest RGB + depth as base64 PNGs (5 Hz polling)
 * `/api/annotations` — user annotation CRUD (see "User annotations" above)
 
-The 3D viz draws the OccupancyGrid as a translucent floor plane at z = -0.01 (so you can read room geometry under the point clouds), each detected object as a coloured pcd + yaw-rotated wireframe bbox + class label sprite, and the robot as a composite Tiago-shaped proxy (mobile base + torso + shoulder + head + arm), all parented to a `THREE.Group` that updates from `/api/state`'s `robot` field at 4 Hz.
+The 3D viz draws the OccupancyGrid as a translucent floor plane at z = -0.01 (so you can read room geometry under the point clouds), each detected object as a coloured pcd + yaw-rotated wireframe bbox + class label sprite, and the robot from the live Soma footprint exposed by `/api/state`. Until Soma geometry is available, the robot mesh, heading arrow, and label remain hidden.
 
 The cam panel shows the same RGB + depth frames the perception pipeline consumes. If detections look wrong, compare them to this feed. Depth is shown as a per-frame normalised grayscale (near = bright). Each tile shows the encoding + age of the latest sample; the meta line turns red once a stream has been silent for >2 s.
 
@@ -449,9 +739,9 @@ The cam panel shows the same RGB + depth frames the perception pipeline consumes
 
 **Scene container exits with status 139 (SIGSEGV)** — was the Open3D `get_oriented_bounding_box(robust=True)` qhull bug; replaced with numpy PCA. If you still see it, `faulthandler.enable(all_threads=True)` (already on in `service.py`) prints the C trace to docker logs.
 
-**Robot dot in web UI doesn't match rviz** — was the `/odom` vs. `map` frame mismatch; fixed by reading tf2 directly. If still off, `docker exec robonix_tiago_sim ros2 run tf2_ros tf2_echo map base_link` should match the web UI's `robot` field exactly.
+**Robot pose in the web UI doesn't match rviz** — compare `/api/state`'s robot frame with the `header.frame_id` published by the selected `service/map/pose` or odometry provider. Scene withholds the robot pose when that source frame is absent instead of guessing a TF endpoint.
 
-**Lots of duplicate objects across the room ("ghosting")** — lower `SCENE_CG_MERGE_THRESHOLD` (default 0.55). Or raise `SCENE_CG_MAX_MERGE_DIST_M` if you have very large objects (e.g. big tables) that span >1.5 m.
+**Lots of duplicate objects across viewpoints ("ghosting")** — inspect `perception_quality.association` and the adaptive/one-to-one rejection counters first. `SCENE_CG_MERGE_THRESHOLD` defaults to `0.85`; lowering it makes visual/spatial association more permissive. For genuinely large objects, raise `SCENE_CG_MAX_MERGE_DIST_M` or `SCENE_CG_ADAPTIVE_MERGE_EXTENT_SCALE` rather than disabling one-to-one association. Keep the one-to-one invariant enabled for scenes containing repeated adjacent instances.
 
 **One physical object shows as several same-class records** (e.g. one keyboard → three) — raise `SCENE_CG_SAME_CLASS_MERGE_DIST_M` so the lenient same-class proximity collapse folds them; `0` disables it.
 
@@ -469,4 +759,4 @@ The cam panel shows the same RGB + depth frames the perception pipeline consumes
 - **No subscribe-stream.** `SubscribeUpdates` doesn't fit MCP semantics. Pilot polls.
 - **No episodic memory.** Long-term memory belongs to memory services, not scene.
 - **No direct motion control.** `goal_near` returns an approach pose; navigation is performed by `robonix/service/navigation/navigate`.
-- **No real Tiago URDF in the 3D viz.** The composite primitive proxy is good enough; PAL's `tiago_description` xacro chain is too heavy to ship into the browser. STLs are pre-staged under `static/urdf/meshes/` if anyone wants to wire urdf-loader-three.js.
+- **No browser-side URDF renderer.** The 3D view uses Soma's navigation footprint rather than loading deployment mesh assets into the generic Scene container.

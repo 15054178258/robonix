@@ -16,7 +16,11 @@
                 <topicName>/head_front_camera/rgb</topicName>
                 <imageSuffix>/image_raw</imageSuffix>
                 <alwaysOn>true</alwaysOn>
-                <frameName>head_front_camera_rgb_optical_frame</frameName>
+                <!-- Webots' generated robot_description already exposes
+                     "Astra rgb" with the optical-axis rotation.  Stamp both
+                     registered streams with that authoritative TF frame
+                     instead of inventing an out-of-tree alias. -->
+                <frameName>Astra rgb</frameName>
             </ros>
         </device>
         <device reference="Astra depth" type="RangeFinder">
@@ -26,9 +30,34 @@
                 <imageSuffix>/image_raw</imageSuffix>
                 <pointCloudSuffix>/points</pointCloudSuffix>
                 <alwaysOn>true</alwaysOn>
-                <frameName>head_front_camera_depth_optical_frame</frameName>
+                <frameName>Astra rgb</frameName>
             </ros>
         </device>
+
+        <!-- TiagoBase already contains these three Webots devices.  Bridge
+             them through the standard driver so localization can fuse a
+             gravity-referenced heading instead of asking the forward-only
+             lidar to infer every turn. -->
+        <plugin type="webots_ros2_driver::Ros2IMU">
+            <enabled>true</enabled>
+            <updateRate>50</updateRate>
+            <topicName>/imu</topicName>
+            <alwaysOn>true</alwaysOn>
+            <frameName>base_link</frameName>
+            <inertialUnitName>inertial unit</inertialUnitName>
+            <gyroName>gyro</gyroName>
+            <accelerometerName>accelerometer</accelerometerName>
+        </plugin>
+
+        <!-- Evaluation-only simulator truth. It is intentionally not exposed
+             through Atlas and must never feed Mapping, Navigation, or Scene. -->
+        <plugin type="eaios_webots.ground_truth_plugin.GroundTruthPlugin">
+            <topicName>/webots/ground_truth/odom</topicName>
+            <frameName>webots_world</frameName>
+            <childFrameName>base_link</childFrameName>
+            <objectControlTopic>/webots/evaluation/object_control</objectControlTopic>
+            <objectControlAckTopic>/webots/evaluation/object_control/ack</objectControlAckTopic>
+        </plugin>
 
         <plugin type="webots_ros2_control::Ros2Control" />
     </webots>

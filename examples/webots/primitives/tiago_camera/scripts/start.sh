@@ -14,30 +14,6 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$SIM_CT"; then
   exit 1
 fi
 
-# Webots-compat static TFs: the eaios_webots controller stamps RGB images
-# with frame_id="head_front_camera_rgb_optical_frame" but the URDF tree
-# exposes the corresponding link as "Astra rgb". Without a bridge, anything
-# that looks up TF for that optical frame (rtabmap RGBD fusion, scene 3D
-# fusion) fails. We publish identity static TFs `Astra rgb` → optical frame
-# so the names line up. Compensation lives here (camera primitive) — never
-# in mapping/scene.
-docker exec -d "$SIM_CT" bash -lc "
-    set +u
-    source /opt/ros/humble/setup.bash >/dev/null
-    export RMW_IMPLEMENTATION=\"${RMW_IMPLEMENTATION:-rmw_zenoh_cpp}\"
-    exec ros2 run tf2_ros static_transform_publisher \
-        --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 \
-        --frame-id 'Astra rgb' --child-frame-id head_front_camera_rgb_optical_frame
-" &>/dev/null
-docker exec -d "$SIM_CT" bash -lc "
-    set +u
-    source /opt/ros/humble/setup.bash >/dev/null
-    export RMW_IMPLEMENTATION=\"${RMW_IMPLEMENTATION:-rmw_zenoh_cpp}\"
-    exec ros2 run tf2_ros static_transform_publisher \
-        --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 \
-        --frame-id 'Astra depth' --child-frame-id head_front_camera_depth_optical_frame
-" &>/dev/null
-
 # Cross-host wiring for an isolated (bridge-network) sim — see tiago_chassis
 # start.sh for the rationale. Host-network sim containers do not have a bridge
 # IP, so fall back to localhost unless Docker returns a valid bridge IPv4.
@@ -68,8 +44,8 @@ exec docker exec \
   -e ROBONIX_PKG_HOST_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
   -e TIAGO_RGB_TOPIC="${TIAGO_RGB_TOPIC:-/head_front_camera/rgb/image_raw}" \
   -e TIAGO_DEPTH_TOPIC="${TIAGO_DEPTH_TOPIC:-/head_front_camera/depth_registered/image_raw}" \
-  -e TIAGO_RGB_FRAME_ID="${TIAGO_RGB_FRAME_ID:-head_front_camera_rgb_optical_frame}" \
-  -e TIAGO_DEPTH_FRAME_ID="${TIAGO_DEPTH_FRAME_ID:-head_front_camera_depth_optical_frame}" \
+  -e TIAGO_RGB_FRAME_ID="${TIAGO_RGB_FRAME_ID:-Astra rgb}" \
+  -e TIAGO_DEPTH_FRAME_ID="${TIAGO_DEPTH_FRAME_ID:-Astra rgb}" \
   -e RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_zenoh_cpp}" \
   -e PYTHONPATH="/robonix_pkgs/pylib/robonix-api:/robonix_pkgs/primitives/tiago_camera/rbnx-build/codegen/proto_gen:/robonix_pkgs/primitives/tiago_camera/rbnx-build/codegen/robonix_mcp_types:/robonix_pkgs/primitives/tiago_camera/robonix_mcp_types" \
   "$SIM_CT" \

@@ -62,7 +62,9 @@ robot:
           exports: []
     - id: head_camera
       type: rgbd_camera
-      urdf_link: head_front_camera_rgb_optical_frame
+      # The generated Webots robot_description exposes this device link with
+      # the correct optical-axis rotation. RGB and registered depth both use it.
+      urdf_link: Astra rgb
       exports:
         - provider_id: tiago_webots_camera
           capabilities:
@@ -70,7 +72,6 @@ robot:
             - { path: robonix/primitive/camera/depth_snapshot, description: "Capture a registered depth image from the Webots head camera." }
             - { path: robonix/primitive/camera/rgb, description: "Expose the RGB image stream for consumers such as mapping." }
             - { path: robonix/primitive/camera/depth, description: "Expose the depth image stream for consumers such as mapping." }
-            - { path: robonix/primitive/camera/extrinsics, description: "Provide the camera transform relative to the robot base." }
     - id: hokuyo_lidar
       type: lidar_2d
       urdf_link: hokuyo

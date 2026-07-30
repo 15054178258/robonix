@@ -79,7 +79,7 @@ start_stream_helpers() {
       --proxy-pid "$_stream_proxy_pid" \
       --timeout "${WEBOTS_HELPER_READY_TIMEOUT:-10}"; then
     echo "[entrypoint] browser-stream helpers failed to become ready" >&2
-    tail -80 /tmp/viewer-http.log /tmp/webots-stream-proxy.log 2>&1 || true
+    tail -n 80 /tmp/viewer-http.log /tmp/webots-stream-proxy.log 2>&1 || true
     return 1
   fi
   echo "[entrypoint] viewer HTTP on :${viewer_port}, optimized WebSocket on :${stream_port}, raw Webots stream on :1234"
@@ -89,29 +89,31 @@ start_stream_helpers() {
 # Webots' own exit status is preserved when the launch process finishes first.
 supervise_required_processes() {
   local status=0
-  local required=("$_webots_launch_pid")
-  if [ "${WEBOTS_STREAM:-0}" = "1" ]; then
-    required+=("$_viewer_pid" "$_stream_proxy_pid")
-  fi
-
-  wait -n "${required[@]}" || status=$?
-  if [ "${WEBOTS_STREAM:-0}" = "1" ]; then
-    if ! kill -0 "$_viewer_pid" 2>/dev/null; then
-      echo "[entrypoint] viewer helper exited unexpectedly; last 80 log lines:" >&2
-      tail -80 /tmp/viewer-http.log 2>&1 || true
-      return 1
+  # Do not use ``wait -n <pid...>`` here. In container Bash it can return 127
+  # after launch-owned short-lived children (for example controller spawners)
+  # are reaped even while every explicitly listed required PID is alive. That
+  # made some WBT worlds exit immediately after successful controller startup.
+  # Poll the exact required PIDs and wait only after the owning process is
+  # actually gone.
+  while true; do
+    if ! kill -0 "$_webots_launch_pid" 2>/dev/null; then
+      wait "$_webots_launch_pid" || status=$?
+      return "$status"
     fi
-    if ! kill -0 "$_stream_proxy_pid" 2>/dev/null; then
-      echo "[entrypoint] stream proxy exited unexpectedly; last 80 log lines:" >&2
-      tail -80 /tmp/webots-stream-proxy.log 2>&1 || true
-      return 1
+    if [ "${WEBOTS_STREAM:-0}" = "1" ]; then
+      if ! kill -0 "$_viewer_pid" 2>/dev/null; then
+        echo "[entrypoint] viewer helper exited unexpectedly; last 80 log lines:" >&2
+        tail -n 80 /tmp/viewer-http.log 2>&1 || true
+        return 1
+      fi
+      if ! kill -0 "$_stream_proxy_pid" 2>/dev/null; then
+        echo "[entrypoint] stream proxy exited unexpectedly; last 80 log lines:" >&2
+        tail -n 80 /tmp/webots-stream-proxy.log 2>&1 || true
+        return 1
+      fi
     fi
-  fi
-  if ! kill -0 "$_webots_launch_pid" 2>/dev/null; then
-    return "$status"
-  fi
-  echo "[entrypoint] a required process exited unexpectedly" >&2
-  return 1
+    sleep 1
+  done
 }
 
 start_zenoh_router() {
@@ -131,7 +133,7 @@ start_zenoh_router() {
   for i in $(seq 1 20); do
     if ! kill -0 "$ZENOH_ROUTER_PID" 2>/dev/null; then
       echo "[entrypoint] rmw_zenohd exited early; last 80 lines:"
-      tail -80 /tmp/rmw_zenohd.log 2>&1 || true
+      tail -n 80 /tmp/rmw_zenohd.log 2>&1 || true
       return 1
     fi
     if python3 - <<PY >/dev/null 2>&1
@@ -146,7 +148,7 @@ PY
     sleep 0.25
   done
   echo "[entrypoint] rmw_zenohd did not listen on :7447; last 80 lines:"
-  tail -80 /tmp/rmw_zenohd.log 2>&1 || true
+  tail -n 80 /tmp/rmw_zenohd.log 2>&1 || true
   return 1
 }
 

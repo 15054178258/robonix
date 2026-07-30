@@ -42,6 +42,7 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/pal_robotics/tiago_lite/protos/TiagoLite.proto"
 
 WorldInfo {
+  basicTimeStep 20
 }
 Viewpoint {
   fieldOfView 1.1

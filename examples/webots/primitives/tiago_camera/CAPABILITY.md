@@ -13,8 +13,8 @@ Head-mounted RGB + depth camera. PRIMARY perception tool — call freely.
 - returns: `sensor_msgs/Image` JSON. `data` is base64-encoded JPEG bytes
   (decode if you need to feed bytes back to a vision tool; for VLM-style
   reasoning you usually just inspect the JPEG directly via the host).
-- frame_id: `head_front_camera_rgb_optical_frame` (override via env
-  `TIAGO_RGB_FRAME_ID`).
+- frame_id: `Astra rgb`, the optical link in Webots' generated
+  `robot_description` (override via env `TIAGO_RGB_FRAME_ID`).
 
 ### `depth_snapshot` — `robonix/primitive/camera/depth_snapshot`
 - input: none

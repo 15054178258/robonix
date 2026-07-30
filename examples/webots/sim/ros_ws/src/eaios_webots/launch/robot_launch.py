@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
+
 import launch
 from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration, TextSubstitution, PathJoinSubstitution
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 from webots_ros2_driver.webots_launcher import WebotsLauncher
@@ -34,27 +36,58 @@ def generate_launch_description():
         'resource', # Assuming URDF files are in the 'resource' folder
         robot_urdf_file
     ])
-    world_description_path = PathJoinSubstitution([
-        package_dir,
-        'worlds', # Assuming world files are in the 'worlds' folder
-        world_wbt_file
-    ])
-
     print(f"using robot_path:{robot_description_path}")
-    print(f"using world_path:{world_description_path}")
 
-    # WEBOTS_STREAM=1 (set by compose.stream.yaml) enables Webots' built-in
-    # WebSocket stream on port 1234 so a remote browser can view the 3D
-    # scene without an X11 server on the client side. Gating on env keeps
-    # the legacy (host DISPLAY) path bit-for-bit unchanged. Port isolation
-    # for parallel sims is handled at the container network layer (a CI sim
-    # runs on a bridge network, not host), NOT by changing the webots port.
-    webots = WebotsLauncher(
-        world=world_description_path,
-        mode="realtime",
-        ros2_supervisor=True,
-        stream=os.environ.get('WEBOTS_STREAM', '0') == '1',
-    )
+    def launch_webots(context):
+        """Resolve the selected world before constructing WebotsLauncher.
+
+        webots_ros2's Humble launcher copies a world and appends its
+        Ros2Supervisor Robot. When handed a PathJoinSubstitution it creates
+        that temporary copy but starts the original path instead, leaving the
+        supervisor process disconnected. Supplying the resolved absolute path
+        makes the launcher's temporary world authoritative.
+        """
+        world_name = world_wbt_file.perform(context)
+        if not world_name or Path(world_name).name != world_name:
+            raise RuntimeError(
+                "world must be a .wbt filename inside the eaios_webots "
+                "worlds directory"
+            )
+        world_path = Path(package_dir, "worlds", world_name)
+        if world_path.suffix != ".wbt":
+            raise RuntimeError(f"invalid Webots world selection: {world_name!r}")
+        if not world_path.is_file():
+            raise RuntimeError(f"Webots world does not exist: {world_path}")
+        # With colcon --symlink-install each installed world file may resolve
+        # back into the source tree while its containing ``worlds`` directory
+        # remains under ``install/``. The basename-only check above already
+        # prevents traversal, so do not reject that legitimate file symlink by
+        # comparing resolved parents.
+        resolved_world_path = world_path.resolve()
+        print(f"using world_path:{resolved_world_path}")
+
+        # WEBOTS_STREAM=1 enables Webots' built-in WebSocket stream on port
+        # 1234. Port isolation is handled by the container network.
+        webots = WebotsLauncher(
+            world=str(resolved_world_path),
+            mode="realtime",
+            ros2_supervisor=True,
+            stream=os.environ.get('WEBOTS_STREAM', '0') == '1',
+        )
+        return [
+            webots,
+            webots._supervisor,
+            launch.actions.RegisterEventHandler(
+                event_handler=launch.event_handlers.OnProcessExit(
+                    target_action=webots,
+                    on_exit=[
+                        launch.actions.EmitEvent(
+                            event=launch.events.Shutdown()
+                        )
+                    ],
+                )
+            ),
+        ]
     
     # ROS control spawners
     controller_manager_timeout = ['--controller-manager-timeout', '500']
@@ -95,9 +128,9 @@ def generate_launch_description():
 
     use_twist_stamped = 'ROS_DISTRO' in os.environ and (os.environ['ROS_DISTRO'] in ['rolling', 'jazzy', 'kilted'])
     if use_twist_stamped:
-        mappings = [('/diffdrive_controller/cmd_vel', '/cmd_vel'), ('/diffdrive_controller/odom', '/odom')]
+        mappings = [('/diffdrive_controller/cmd_vel', '/cmd_vel'), ('/diffdrive_controller/odom', '/wheel_odom')]
     else:
-        mappings = [('/diffdrive_controller/cmd_vel_unstamped', '/cmd_vel'), ('/diffdrive_controller/odom', '/odom')]
+        mappings = [('/diffdrive_controller/cmd_vel_unstamped', '/cmd_vel'), ('/diffdrive_controller/odom', '/wheel_odom')]
     ros2_control_params = os.path.join(package_dir, 'resource', 'ros2_control.yml')
     my_robot_driver = WebotsController(
         robot_name='my_robot', # Ensure this name matches the robot node name in the Webots world.
@@ -116,6 +149,18 @@ def generate_launch_description():
         nodes_to_start=ros_control_spawners
     )
 
+    odom_filter = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[
+            os.path.join(package_dir, 'resource', 'ekf.yaml'),
+            {'use_sim_time': use_sim_time},
+        ],
+        remappings=[('/odometry/filtered', '/odom')],
+    )
+
     return LaunchDescription([
         robot_arg,
         world_arg,
@@ -125,17 +170,11 @@ def generate_launch_description():
             description='Use simulation (Webots) clock if true'
         ),
 
-        webots,
-        webots._supervisor,
+        OpaqueFunction(function=launch_webots),
         robot_state_publisher, # Ensure robot_state_publisher starts before my_robot_driver if my_robot_driver depends on it.
         footprint_publisher,
         my_robot_driver,
         waiting_nodes,
-        launch.actions.RegisterEventHandler(
-            event_handler=launch.event_handlers.OnProcessExit(
-                target_action=webots,
-                on_exit=[launch.actions.EmitEvent(event=launch.events.Shutdown())],
-            )
-        )
+        odom_filter,
     ])
 

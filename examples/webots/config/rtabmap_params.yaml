@@ -1,8 +1,14 @@
 # Webots Tiago RTAB-Map parameters. This file is owned by this deployment.
 RGBD/CreateOccupancyGrid: true
+# `mapping.config.occupancy_sources: [lidar]` is the single source of truth for
+# selecting the planar-lidar structural grid. RGB-D remains an RTAB-Map
+# registration/loop-closure input, while high obstacles are owned by Nav2's
+# depth PointCloud2 obstacle source.
 Grid/RangeMax: 6.0
 Grid/CellSize: 0.05
-Grid/RayTracing: true # when set to false, ghost points will exist on map - wheatfox 2026.7.19
+# Laser rays may clear stale structural cells because high depth-only
+# obstacles are no longer mixed into this grid.
+Grid/RayTracing: true
 Grid/3D: false
 Grid/NormalsSegmentation: false
 Grid/MaxObstacleHeight: 1.0
@@ -10,6 +16,11 @@ Grid/MaxGroundHeight: 0.1
 Reg/Strategy: 1
 Reg/Force3DoF: true
 Optimizer/Strategy: 1
+# Refine each consecutive odometry link with planar ICP. The fused /odom is an
+# initial motion estimate, not ground truth: wheel slip must not be baked into
+# every later map node. Spatial proximity adds registration constraints when a
+# mapped area is revisited; appearance-only global closures remain disabled
+# below for this staged experiment.
 RGBD/NeighborLinkRefining: true
 RGBD/ProximityBySpace: true
 RGBD/AngularUpdate: 0.05

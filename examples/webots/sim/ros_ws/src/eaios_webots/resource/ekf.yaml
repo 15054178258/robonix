@@ -1,0 +1,35 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    sensor_timeout: 0.1
+    two_d_mode: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    odom0: /wheel_odom
+    odom0_config:
+      [false, false, false,
+       false, false, false,
+       true,  false, false,
+       false, false, false,
+       false, false, false]
+    odom0_queue_size: 10
+
+    imu0: /imu
+    imu0_config:
+      [false, false, false,
+       false, false, true,
+       false, false, false,
+       false, false, true,
+       false, false, false]
+    imu0_queue_size: 20
+    # Webots reports world-referenced orientation. Odom is intentionally local
+    # to the robot's startup pose, so fuse changes from the initial IMU heading
+    # instead of rotating the local odom frame into world coordinates.
+    imu0_relative: true
+    imu0_remove_gravitational_acceleration: true

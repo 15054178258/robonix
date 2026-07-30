@@ -168,7 +168,7 @@ exec docker run --rm \
     --entrypoint /scene/docker/entrypoint.sh \
     --network host \
     --ipc=host \
-    "${GPU_ARGS[@]}" \
+    ${GPU_ARGS[@]+"${GPU_ARGS[@]}"} \
     -e ROBONIX_ATLAS="${ROBONIX_ATLAS:-127.0.0.1:50051}" \
     -e ROBONIX_PROVIDER_BIND_HOST="${ROBONIX_PROVIDER_BIND_HOST:-0.0.0.0}" \
     -e ROBONIX_ADVERTISE_HOST="${ROBONIX_ADVERTISE_HOST:-}" \
@@ -177,9 +177,16 @@ exec docker run --rm \
     -e SCENE_WEB_PORT="${SCENE_WEB_PORT:-50107}" \
     -e SCENE_WEB_HOST="${SCENE_WEB_HOST-0.0.0.0}" \
     -e SCENE_LOG_LEVEL="${SCENE_LOG_LEVEL:-INFO}" \
+    -e SCENE_CAMERA_FRAME="${SCENE_CAMERA_FRAME:-}" \
+    -e SCENE_BASE_FRAME="${SCENE_BASE_FRAME:-}" \
     -e SCENE_CG_FORCE_CPU="${SCENE_CG_FORCE_CPU:-}" \
     -e SCENE_CG_OBJ_MIN_POINTS="${SCENE_CG_OBJ_MIN_POINTS:-}" \
+    -e SCENE_CG_MERGE_THRESHOLD="${SCENE_CG_MERGE_THRESHOLD:-}" \
     -e SCENE_CG_MAX_MERGE_DIST_M="${SCENE_CG_MAX_MERGE_DIST_M:-}" \
+    -e SCENE_CG_ONE_TO_ONE_ASSOCIATION="${SCENE_CG_ONE_TO_ONE_ASSOCIATION:-}" \
+    -e SCENE_CG_ADAPTIVE_MERGE_DISTANCE="${SCENE_CG_ADAPTIVE_MERGE_DISTANCE:-}" \
+    -e SCENE_CG_ADAPTIVE_MERGE_MIN_DIST_M="${SCENE_CG_ADAPTIVE_MERGE_MIN_DIST_M:-}" \
+    -e SCENE_CG_ADAPTIVE_MERGE_EXTENT_SCALE="${SCENE_CG_ADAPTIVE_MERGE_EXTENT_SCALE:-}" \
     -e SCENE_CG_CROSS_CLASS_CENTROID_MAX_M="${SCENE_CG_CROSS_CLASS_CENTROID_MAX_M:-}" \
     -e SCENE_CG_CROSS_CLASS_IOU_THRESH="${SCENE_CG_CROSS_CLASS_IOU_THRESH:-}" \
     -e SCENE_CG_CROSS_CLASS_OVERLAP_THRESH="${SCENE_CG_CROSS_CLASS_OVERLAP_THRESH:-}" \
@@ -206,15 +213,15 @@ exec docker run --rm \
     -e SCENE_GRAPH_MAX_LLM_RELATIONS_PER_CYCLE="${SCENE_GRAPH_MAX_LLM_RELATIONS_PER_CYCLE:-20}" \
     -e SCENE_OBJECT_MEMORY_ENABLED="${SCENE_OBJECT_MEMORY_ENABLED:-true}" \
     -e SCENE_OBJECT_MEMORY_DB="${SCENE_OBJECT_MEMORY_DB:-/data/robonix/scene_memory/objects.db}" \
-    "${MAP_ID_ARGS[@]}" \
+    ${MAP_ID_ARGS[@]+"${MAP_ID_ARGS[@]}"} \
     -e RBNX_CONFIG_FILE="${RBNX_CONFIG_FILE:-}" \
     -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" \
     -e RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_zenoh_cpp}" \
     -e CYCLONEDDS_URI="${CYCLONEDDS_URI:-}" \
-    "${ZENOH_ARGS[@]}" \
+    ${ZENOH_ARGS[@]+"${ZENOH_ARGS[@]}"} \
     -v "$(pwd)":/scene \
     -v "$PKG/rbnx-build/codegen/scene_proto_gen:/scene/rbnx-build/codegen/proto_gen:ro" \
     -v "$SCENE_HOST_DATA_DIR":/data/robonix \
     -v "$(rbnx path robonix-api)":/robonix-api:ro \
-    "${EXTRA_MOUNTS[@]}" \
+    ${EXTRA_MOUNTS[@]+"${EXTRA_MOUNTS[@]}"} \
     "$IMG"

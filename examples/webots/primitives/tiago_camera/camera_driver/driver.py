@@ -9,7 +9,6 @@ Owns `primitive/camera/*`. Subscribes to RGB + depth image topics, exposes:
                                               the JPEG-snapshot is the LLM-
                                               facing tool, see snapshot below)
   primitive/camera/depth          topic_out
-  primitive/camera/extrinsics     topic_out  (latched TransformStamped)
   primitive/camera/intrinsics     topic_out  (latched CameraInfo)
   primitive/camera/snapshot       rpc        (MCP, RGB JPEG)
   primitive/camera/depth_snapshot rpc        (MCP, depth as 8-bit JPEG)
@@ -39,7 +38,6 @@ state_lock = threading.Lock()
 intrinsics_lock = threading.Lock()
 latest_rgb_jpeg: bytes | None = None
 latest_depth_jpeg: bytes | None = None
-extrinsics_pub = None  # rclpy publisher for the latched TF
 intrinsics_pub = None  # rclpy publisher for the latched CameraInfo
 intrinsics_published = False  # true after the first valid K sample is published
 camera_info_seen = False
@@ -200,7 +198,7 @@ def snapshot(msg: Empty) -> Image:
     if data is None:
         raise RuntimeError("no RGB image received yet")
     return jpeg_to_image_mcp(
-        data, os.environ.get("TIAGO_RGB_FRAME_ID", "head_front_camera_rgb_optical_frame")
+        data, os.environ.get("TIAGO_RGB_FRAME_ID", "Astra rgb")
     )
 
 
@@ -216,40 +214,8 @@ def depth_snapshot(msg: Empty) -> Image:
     if data is None:
         raise RuntimeError("no depth image received yet")
     return jpeg_to_image_mcp(
-        data, os.environ.get("TIAGO_DEPTH_FRAME_ID", "head_front_camera_depth_optical_frame")
+        data, os.environ.get("TIAGO_DEPTH_FRAME_ID", "Astra rgb")
     )
-
-
-# ── extrinsics: tf2 lookup once at startup, republish on a latched topic ────
-def publish_extrinsics_when_ready(base_frame: str, cam_frame: str, topic: str) -> None:
-    """Resolve `base_frame → cam_frame` from tf2, publish on latched extrinsics
-    topic, exit. tf2 is used here purely as the local-to-this-primitive
-    mechanism for reading the URDF chain — consumers never touch tf2; they
-    go through the declared `primitive/camera/extrinsics` contract."""
-    from rclpy.duration import Duration  # type: ignore
-    from rclpy.time import Time  # type: ignore
-    from tf2_ros import Buffer, TransformListener  # type: ignore
-    from robonix_api.ros import RosBackend
-    node = RosBackend.get().node
-    tf_buf = Buffer()
-    TransformListener(tf_buf, node)
-    deadline = time.monotonic() + 60.0
-    while time.monotonic() < deadline:
-        try:
-            tf = tf_buf.lookup_transform(base_frame, cam_frame, Time(), Duration(seconds=0.5))
-        except Exception:  # noqa: BLE001
-            time.sleep(0.5)
-            continue
-        tf.header.frame_id = base_frame
-        tf.child_frame_id = cam_frame
-        if extrinsics_pub is not None:
-            extrinsics_pub.publish(tf)
-        t = tf.transform.translation
-        print(f"[tiago_camera] published extrinsics {base_frame}→{cam_frame}: "
-              f"({t.x:.3f}, {t.y:.3f}, {t.z:.3f}) → {topic}")
-        return
-    print(f"[tiago_camera] WARN: extrinsics publish gave up — tf2 chain "
-          f"{base_frame}→{cam_frame} not resolvable.")
 
 
 def topic_has_sample(topic: str, timeout_s: float) -> bool:
@@ -298,7 +264,7 @@ def _cfg_int(cfg: dict, key: str, env_key: str, default: int) -> int:
 # ── lifecycle ────────────────────────────────────────────────────────────────
 @tiago_camera.on_init
 def init(cfg):
-    global extrinsics_pub, intrinsics_pub, intrinsics_published, camera_info_seen
+    global intrinsics_pub, intrinsics_published, camera_info_seen
     global configured_intrinsics_msg, configured_intrinsics_k
     global latest_intrinsics_msg, latest_intrinsics_k
     global intrinsics_publish_interval_s, configured_intrinsics_logged
@@ -308,15 +274,12 @@ def init(cfg):
         "TIAGO_RGB_TOPIC", "/head_front_camera/rgb/image_raw")
     depth_topic = cfg.get("depth_topic") or os.environ.get(
         "TIAGO_DEPTH_TOPIC", "/head_front_camera/depth_registered/image_raw")
-    extrinsics_topic = cfg.get("extrinsics_topic") or os.environ.get(
-        "TIAGO_CAMERA_EXTRINSICS_TOPIC", "/tiago/camera/extrinsics")
     camera_info_topic = cfg.get("camera_info_topic") or os.environ.get(
         "TIAGO_CAMERA_INFO_TOPIC", "/head_front_camera/rgb/camera_info")
     intrinsics_topic = cfg.get("intrinsics_topic") or os.environ.get(
         "TIAGO_CAMERA_INTRINSICS_TOPIC", "/tiago/camera/intrinsics")
-    base_frame = cfg.get("base_frame") or os.environ.get("TIAGO_BASE_FRAME", "base_link")
     cam_frame = cfg.get("cam_frame") or os.environ.get(
-        "TIAGO_RGB_FRAME_ID", "head_front_camera_rgb_optical_frame")
+        "TIAGO_RGB_FRAME_ID", "Astra rgb")
     sentinel_timeout = float(cfg.get("sentinel_timeout_s", 60.0))
     intrinsics_source_timeout_s = _cfg_float(
         cfg, "camera_info_source_timeout_s", "TIAGO_CAMERA_INFO_SOURCE_TIMEOUT_S", 1.0
@@ -332,18 +295,6 @@ def init(cfg):
     tiago_camera.create_subscription("robonix/primitive/camera/depth",
                             topic=depth_topic, msg_type="Image",
                             callback=on_depth, qos="best_effort", declare=False)
-
-    # latched extrinsics publisher
-    from geometry_msgs.msg import TransformStamped  # type: ignore
-    extrinsics_pub = tiago_camera.create_publisher(
-        "robonix/primitive/camera/extrinsics",
-        topic=extrinsics_topic, msg_type=TransformStamped, qos="latched",
-    )
-    threading.Thread(
-        target=publish_extrinsics_when_ready,
-        args=(base_frame, cam_frame, extrinsics_topic),
-        daemon=True,
-    ).start()
 
     # Intrinsics contract publisher. Prefer the camera's own CameraInfo stream
     # when present. Webots' Tiago camera plugin publishes images but not a
@@ -442,8 +393,8 @@ def init(cfg):
 
     # Give-up watchdog: if no usable CameraInfo lands on `camera_info_topic`
     # the intrinsics contract is advertised but never publishes, and scene
-    # would wait forever for K. Warn after a deadline — mirrors the
-    # extrinsics give-up WARN — so a wrong topic name is visible.
+    # would wait forever for K. Warn after a deadline so a wrong topic name is
+    # visible.
     def warn_if_no_intrinsics(source_topic: str, deadline_s: float = 60.0) -> None:
         end = time.monotonic() + deadline_s
         while time.monotonic() < end:

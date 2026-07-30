@@ -14,6 +14,7 @@ data_files = [
     ('share/' + package_name + '/resource', [
         'resource/tiago_webots.urdf',
         'resource/ros2_control.yml',
+        'resource/ekf.yaml',
     ]),
 ]
 

@@ -132,7 +132,11 @@ controller_server:
       min_vel_y: 0.0
       max_vel_x: 0.26
       max_vel_y: 0.0
-      max_vel_theta: 1.0
+      # SI units: rad/s and rad/s^2. Keep mapping turns below the regime where
+      # the simulated caster/wheel contact slips laterally; Webots ground truth
+      # shows that 1.0 rad/s sweeps accumulate centimetre-scale cross-track
+      # error even though the IMU heading later converges.
+      max_vel_theta: 0.4
       min_speed_xy: 0.0
       max_speed_xy: 0.26
       min_speed_theta: 0.0
@@ -140,10 +144,10 @@ controller_server:
       # https://github.com/ROBOTIS-GIT/turtlebot3_simulations/issues/75
       acc_lim_x: 2.5
       acc_lim_y: 0.0
-      acc_lim_theta: 3.2
+      acc_lim_theta: 1.2
       decel_lim_x: -2.5
       decel_lim_y: 0.0
-      decel_lim_theta: -3.2
+      decel_lim_theta: -1.2
       vx_samples: 20
       vy_samples: 5
       vtheta_samples: 20
@@ -183,16 +187,18 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      robot_radius: 0.22
+      # Materialized by service-navigation-rbnx through the standard Soma
+      # footprint contract. Do not duplicate robot geometry in this profile.
+      footprint: "__ROBONIX_FOOTPRINT__"
       # static_layer first: the rolling local window is cropped from the live
       # rtabmap /map, so the local controller (DWB) sees mapped walls and
       # avoids them reactively. obstacle_layer adds anything not yet mapped.
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "scan_obstacle_layer", "depth_obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
         map_topic: "__ROBONIX_MAP_TOPIC__"
-      obstacle_layer:
+      scan_obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan
@@ -206,6 +212,24 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      # Keep depth in a separate costmap layer. Clearing rays apply to an
+      # entire ObstacleLayer, so sharing this grid with the low planar lidar
+      # would let lidar rays passing under a tabletop erase the depth mark.
+      depth_obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: depth_points
+        depth_points:
+          topic: "/head_front_camera/depth_registered/points"
+          data_type: "PointCloud2"
+          min_obstacle_height: 0.10
+          max_obstacle_height: 1.80
+          clearing: True
+          marking: True
+          raytrace_max_range: 3.5
+          raytrace_min_range: 0.15
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.15
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 1.0
@@ -229,11 +253,11 @@ global_costmap:
       width: 12
       height: 12
       use_sim_time: True
-      robot_radius: 0.22
+      footprint: "__ROBONIX_FOOTPRINT__"
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
-      obstacle_layer:
+      plugins: ["static_layer", "scan_obstacle_layer", "depth_obstacle_layer", "inflation_layer"]
+      scan_obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan
@@ -247,6 +271,21 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      depth_obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: depth_points
+        depth_points:
+          topic: "/head_front_camera/depth_registered/points"
+          data_type: "PointCloud2"
+          min_obstacle_height: 0.10
+          max_obstacle_height: 1.80
+          clearing: True
+          marking: True
+          raytrace_max_range: 3.5
+          raytrace_min_range: 0.15
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.15
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True

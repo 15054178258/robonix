@@ -302,6 +302,13 @@ class ObjectStore:
 
         objs: list[SceneObject] = []
         for r in rows:
+            frame_id = str(r.get("frame_id") or "").strip()
+            if not frame_id:
+                log.warning(
+                    "[scene-persist] skipping %s: stored spatial frame is missing",
+                    r.get("object_id", "<unknown>"),
+                )
+                continue
             try:
                 attrs = json.loads(r.get("attributes") or "{}")
             except (TypeError, ValueError):
@@ -312,12 +319,12 @@ class ObjectStore:
                     cls=r["cls"],
                     pose=Pose3D(
                         x=r["x"], y=r["y"], z=r["z"], yaw=r["yaw"],
-                        frame_id=r.get("frame_id") or "map",
+                        frame_id=frame_id,
                     ),
                     bbox=BBox3D(
                         size_x=r["size_x"], size_y=r["size_y"], size_z=r["size_z"],
                         yaw=r.get("bbox_yaw", 0.0),
-                        frame_id=r.get("frame_id") or "map",
+                        frame_id=frame_id,
                     ),
                     confidence=r["confidence"],
                     first_seen=r["first_seen"],
@@ -352,6 +359,34 @@ class ObjectStore:
             return len(rows)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"delete_map({target}) failed: {e}") from e
+
+    def delete_object(
+        self,
+        object_id: str,
+        *,
+        partition: Optional[str] = None,
+    ) -> bool:
+        """Delete one exact object row from one semantic snapshot partition."""
+        target = self._partition(partition)
+        pk = f"{target}::{object_id}"
+        predicate = f"pk == {json.dumps(pk)}"
+        try:
+            rows = self._client.query(
+                collection_name=_COLLECTION,
+                filter=predicate,
+                output_fields=["pk"],
+                limit=1,
+            )
+            if rows:
+                self._client.delete(
+                    collection_name=_COLLECTION,
+                    filter=predicate,
+                )
+            return bool(rows)
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                f"delete_object({target}, {object_id}) failed: {e}"
+            ) from e
 
     def purge_live_partitions(self) -> int:
         """Best-effort deletion of leftover `.live*` partitions.

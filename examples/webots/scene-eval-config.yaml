@@ -1,0 +1,152 @@
+perception:
+  period_s: 0.6
+  confidence_threshold: 0.30
+  max_detections: 30
+  confirmation_min_unique_frames: 2
+  confirmation_singleton_min_mean_confidence: 0.0
+  visible_miss_frames: 3
+  visibility_depth_margin_m: 0.10
+  visibility_min_clear_samples: 3
+  visibility_min_clear_fraction: 0.60
+  visibility_max_projected_samples: 25
+  object_ttl_s: 30.0
+  label:
+    history_size: 20
+    min_switch_observations: 2
+    min_winner_share: 0.55
+    switch_margin: 0.15
+    clip_rerank:
+      # Keep this standalone evaluation config identical to the two Webots
+      # evaluation manifests.  This is not a production default.
+      groups:
+        - labels: [window, picture frame]
+          # Five-world feature sweep: 7 corrections, 0 regressions.
+          min_margin: 0.002
+        - labels: [cereal box, book, box, plate]
+          # Lower values caused one helpful and one harmful switch.
+          min_margin: 0.05
+        - labels: [monitor, television]
+          # Strict top-1 corrected 5 wrong labels with 0 regressions.
+          min_margin: 0.0
+      # Source-specific routes avoid the regressions caused by making these
+      # visually adjacent classes one symmetric group.  Across five worlds
+      # plus the fresh Office v92 capture, the thresholds below corrected six
+      # matched labels with zero harmful matched-label switches.
+      routes:
+        chair:
+          labels: [chair, monitor]
+          min_margin: 0.02
+        shelf:
+          labels: [shelf, cabinet]
+          min_margin: 0.06
+        table:
+          labels: [table, chair]
+          min_margin: 0.02
+        cup:
+          # Five fresh persistent-feature captures corrected four cans with no
+          # harmful matched or all-feature switches at this threshold.
+          labels: [cup, can]
+          min_margin: 0.02
+        cabinet:
+          labels: [cabinet, window]
+          min_margin: 0.03
+        refrigerator:
+          labels: [refrigerator, cabinet]
+          min_margin: 0.03
+      prompts:
+        window:
+          - an indoor glass window showing an outdoor view
+          - a window installed in a wall
+        picture frame:
+          - a framed painting or photograph hanging on a wall
+          - a picture frame containing artwork
+        cereal box:
+          - a rectangular cardboard breakfast cereal package
+          - a printed cereal food box standing on a kitchen counter
+        book:
+          - a printed book with pages and a visible spine
+          - a closed book lying on a table
+        box:
+          - a plain cardboard storage or food box
+          - a rectangular cardboard package
+        plate:
+          - a round dining plate on a table
+          - a shallow ceramic plate viewed from above
+        monitor:
+          - a desktop computer monitor on an office desk
+          - a computer display with a stand, keyboard, and desk
+        television:
+          - a large living room television viewed from a sofa
+          - a wall mounted TV for watching programs
+        cup:
+          - a drinking cup with an open top
+          - a ceramic cup or mug
+        can:
+          - a cylindrical metal food or drink can
+          - a sealed aluminum can on a table
+      persistent_geometry:
+        # Persistent 3D extent is positive evidence only: it never subtracts
+        # from another candidate and is not used for per-frame association.
+        score_bonus: 0.06
+        labels:
+          monitor:
+            # Limit this evidence to the monitor/television ambiguity domain;
+            # monitor is also a candidate of the separate chair route.
+            source_labels: [monitor, television]
+            # Across 78 matched monitor/television rows, 23/26 false
+            # television labels were at or below 0.68 m, while all 15 true
+            # televisions were at least 0.719 m.
+            max_horizontal_extent_m: 0.68
+      min_score: 0.20
+      min_margin: 0.05
+    aliases:
+      plant: potted plant
+      sofa: couch
+  association:
+    confusable_class_groups:
+      - [window, picture frame]
+      # Identity association only; label resolution remains independent.
+      - [monitor, television]
+    allow_cross_class_merge: false
+    exact_duplicate_centroid_max_m: 0.15
+    exact_duplicate_min_voxel_coverage: 0.40
+    exact_duplicate_max_extent_ratio: 1.50
+    coobserved_duplicate_min_shared_frames: 3
+    coobserved_duplicate_min_median_iou: 0.85
+    coobserved_duplicate_max_extent_ratio: 2.0
+    coobserved_duplicate_min_visual_similarity: 0.90
+    same_class_centroid_max_m: 0.15
+    same_class_min_voxel_coverage: 0.50
+    same_class_max_extent_ratio: 1.75
+    same_class_disjoint_min_unique_frames: 2
+    same_class_disjoint_max_frame_gap: 1
+    same_class_disjoint_max_center_major_extent_ratio: 0.20
+    same_class_disjoint_min_visual_similarity: 0.85
+    same_class_merge_interval_ticks: 1
+    identity_rebind_max_distance_m: 0.45
+  geometry:
+    mask_erosion_px: 1
+    min_depth_m: 0.15
+    max_depth_m: 6.0
+    depth_mad_scale: 3.5
+    depth_min_band_m: 0.12
+    frame_dbscan: true
+    require_occupancy_bounds: true
+    map_bounds_margin_m: 0.25
+    map_max_outside_fraction: 0.20
+    bbox_low_percentile: 5.0
+    bbox_high_percentile: 95.0
+    max_bbox_extent_m: 3.0
+    rebase_map_corrections: false
+    # Transparent wall fixtures can be visible in RGB while Webots depth
+    # lands on the surface behind them. Correct only the normal translation
+    # when a dominant, parallel occupancy line provides strong support.
+    surface_snap:
+      labels: [window, picture frame]
+      max_distance_m: 0.60
+      tangent_padding_m: 0.25
+      min_shift_m: 0.05
+      min_support_cells: 30
+      min_dominant_share: 0.55
+      min_tangent_coverage: 0.50
+      occupancy_threshold: 50

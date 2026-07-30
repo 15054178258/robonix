@@ -64,6 +64,7 @@ def test_soft_evict():
     kb.attributes["cg_uuid"] = "u1"
     reg.soft_evict(kb)
     assert kb.missing is True
+    assert kb.attributes["missing_reason"] == "cg_orphan"
     assert "cg_uuid" not in kb.attributes
     assert reg.get_object(kb.object_id) is kb, "record must be retained, not deleted"
     # Now visible to only_missing re-bind.
@@ -128,7 +129,6 @@ def _make_detector(registry):
         rgb_fetcher_msg=lambda: None,
         depth_fetcher_msg=lambda: None,
         camera_info_fetcher=lambda: None,
-        chassis_pose_fn=lambda: None,
         on_detections=_noop,
         registry=registry,
         world_frame_fn=lambda: "map",
@@ -175,6 +175,11 @@ def test_apply_snapshot_cross_tick_rebind():
     assert objs[0].observation_count == 3, "obs count must continue, not reset"
     assert objs[0].missing is False
     assert objs[0].attributes.get("cg_uuid") == "u2", "rebound to the new uuid"
+    assert objs[0].attributes.get("identity_rebind_count") == 1
+    assert objs[0].attributes.get("identity_rebind_last_kind") == "cross_tick"
+    assert abs(
+        float(objs[0].attributes.get("identity_rebind_last_distance_m")) - 0.02
+    ) < 1e-9
     print("  [PASS] test_apply_snapshot_cross_tick_rebind")
 
 

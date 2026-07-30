@@ -1,0 +1,46 @@
+<!--
+  Frontier-exploration policy for bounded Webots Scene evaluation.
+
+  The standard Nav2 tree retries six general recovery rounds. That is useful
+  for a single user-selected destination, but wastes a bounded exploration
+  budget when many alternative frontiers exist. This tree keeps Nav2's normal
+  1 Hz replanning and one context-specific costmap clear, then returns failure
+  through the standard NavigateToPose action. Explore owns target cooldown and
+  selects another footprint-safe endpoint through the public Navigation API.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="1" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose
+              goal="{goal}"
+              path="{path}"
+              planner_id="GridBased"/>
+            <ClearEntireCostmap
+              name="ClearGlobalCostmap-Context"
+              service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap
+            name="ClearLocalCostmap-Context"
+            service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Sequence name="ClearCostmapsOnce">
+          <ClearEntireCostmap
+            name="ClearLocalCostmap-Subtree"
+            service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap
+            name="ClearGlobalCostmap-Subtree"
+            service_name="global_costmap/clear_entirely_global_costmap"/>
+        </Sequence>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

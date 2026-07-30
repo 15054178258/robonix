@@ -15,8 +15,111 @@ system:
     log: info
   # soma+scene layer
   scene:
-    log: info
-    camera_frame: head_front_camera_rgb_optical_frame
+    config:
+      perception:
+        # Metric SI units. A removed object must be absent in three healthy,
+        # depth-verified frames before it becomes missing. Sensor/model
+        # outages and occlusion do not count as negative observations.
+        period_s: 0.6
+        # YOLO-World admission controls. Confidence is unitless [0, 1];
+        # max_detections is the per-frame cap before SAM/ConceptGraphs.
+        confidence_threshold: 0.30
+        max_detections: 30
+        # Two distinct RGB-D frames confirm a new persistent object. Multiple
+        # overlapping hypotheses from one frame remain debug candidates and
+        # cannot permanently pollute Scene memory.
+        confirmation_min_unique_frames: 2
+        # A single very strong observation may publish immediately. Set 0 to
+        # disable this fast path; 0.65 is calibrated from the Office replay.
+        confirmation_singleton_min_mean_confidence: 0.0
+        visible_miss_frames: 3
+        visibility_depth_margin_m: 0.10
+        visibility_min_clear_samples: 3
+        visibility_min_clear_fraction: 0.60
+        visibility_max_projected_samples: 25
+        object_ttl_s: 30.0
+        label:
+          # Require repeated, confidence-weighted evidence before a label is
+          # navigation-grade or allowed to replace a stable track label.
+          history_size: 20
+          min_switch_observations: 2
+          min_winner_share: 0.55
+          switch_margin: 0.15
+          # Webots A/B showed that YOLO-World often calls a glass window a
+          # picture frame. Reuse ConceptGraphs' existing crop-level CLIP
+          # feature as a conservative second opinion only for this reviewed
+          # confusion pair; every other detector label is left untouched.
+          clip_rerank:
+            groups:
+              - [window, picture frame]
+            prompts:
+              window:
+                - an indoor glass window showing an outdoor view
+                - a window installed in a wall
+              picture frame:
+                - a framed painting or photograph hanging on a wall
+                - a picture frame containing artwork
+            min_score: 0.20
+            # Repeated office crops ranked the true window first with only
+            # 0.001-0.004 cosine margin, while the real apartment painting
+            # ranked picture-frame first. Keep the 0.20 absolute-score gate
+            # and accept only a strict top-1 winner (ties never switch).
+            min_margin: 0.0
+          # The office world contains only PottedTree instances. Keep both
+          # detector prompts but aggregate their evidence under one reviewed
+          # deployment label instead of splitting plant/potted-plant tracks.
+          aliases:
+            plant: potted plant
+            sofa: couch
+        association:
+          # Co-location is not proof of identity (for example, a cup on a
+          # table). Webots uses exact-label tracks and disables the legacy
+          # class-agnostic geometric collapse. Cross-label hypotheses are
+          # allowed to reach ConceptGraphs' normal overlap + CLIP merge only
+          # when both clouds are near-identical by all three strict gates.
+          # These are competing hypotheses for one wall fixture, not semantic
+          # aliases. Normal ConceptGraphs overlap + CLIP gates still decide
+          # identity; this only prevents per-frame reranking from spawning
+          # parallel tracks for the same physical crop.
+          confusable_class_groups:
+            - [window, picture frame]
+            - [monitor, television]
+          allow_cross_class_merge: false
+          exact_duplicate_centroid_max_m: 0.15
+          exact_duplicate_min_voxel_coverage: 0.40
+          exact_duplicate_max_extent_ratio: 1.50
+          coobserved_duplicate_min_shared_frames: 3
+          coobserved_duplicate_min_median_iou: 0.85
+          coobserved_duplicate_max_extent_ratio: 2.0
+          coobserved_duplicate_min_visual_similarity: 0.90
+          same_class_centroid_max_m: 0.15
+          same_class_min_voxel_coverage: 0.50
+          same_class_max_extent_ratio: 1.75
+          same_class_disjoint_min_unique_frames: 2
+          same_class_disjoint_max_frame_gap: 1
+          same_class_disjoint_max_center_major_extent_ratio: 0.20
+          same_class_disjoint_min_visual_similarity: 0.85
+          same_class_merge_interval_ticks: 1
+          identity_rebind_max_distance_m: 0.45
+        geometry:
+          # Reject RGB-D points outside the physical sensor range, remove
+          # one-pixel SAM boundary leakage, denoise each frame, and admit only
+          # point clouds that fit the current map grid.
+          mask_erosion_px: 1
+          min_depth_m: 0.15
+          max_depth_m: 6.0
+          depth_mad_scale: 3.5
+          depth_min_band_m: 0.12
+          frame_dbscan: true
+          require_occupancy_bounds: true
+          map_bounds_margin_m: 0.25
+          map_max_outside_fraction: 0.20
+          bbox_low_percentile: 5.0
+          bbox_high_percentile: 95.0
+          max_bbox_extent_m: 3.0
+          # REP-105 map is fixed; live map<-odom correction must not move
+          # historical object geometry already expressed in map.
+          rebase_map_corrections: false
   # execution layer
   executor:
     listen: 127.0.0.1:50061
@@ -138,8 +241,11 @@ service:
     branch: main
     config:
       use_sim_time: true
-      # Fuse planar lidar and registered depth into the 2-D occupancy grid.
-      occupancy_sources: [lidar, depth]
+      # Use planar lidar for the persistent structural occupancy grid. RGB-D
+      # remains an RTAB-Map registration/loop-closure input below; high
+      # obstacles are maintained independently by Nav2's depth obstacle layer.
+      occupancy_sources: [lidar]
+      # Complete simulator tuning is owned by this deployment repository.
       # RTAB-Map also consumes RGB-D and the chassis odometry for SLAM.
       rtabmap_inputs: [lidar, rgbd, odom]
       params_file: config/rtabmap_params.yaml
@@ -182,6 +288,16 @@ skill:
     url: https://github.com/syswonder/skill-explore-rbnx
     branch: main
     config:
-      # example place holders
-      explore_mode: frontier
-      timeout_s: 600
+      # Do not let one unreachable frontier consume the entire exploration
+      # budget inside Nav2 recovery. Progress is measured from the live
+      # map-frame pose, not from world names or hard-coded waypoints.
+      progress_watchdog:
+        no_progress_timeout_s: 12.0
+        min_translation_progress_m: 0.08
+        min_rotation_progress_rad: 0.14
+      frontier_recovery:
+        retry_failed_after_s: 30.0
+        # SI metres beyond the Soma footprint at a selected endpoint. Routes
+        # still use the physical footprint, while endpoints avoid leaving
+        # Nav2 inside an inscribed-cost band after a successful leg.
+        endpoint_clearance_m: 0.10

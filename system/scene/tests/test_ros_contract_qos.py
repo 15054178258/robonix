@@ -43,6 +43,10 @@ class RosContractQosTests(unittest.TestCase):
             ("reliable", "volatile", 10),
         )
         self.assertEqual(
+            self.policy("occupancy_grid", "reliable"),
+            ("reliable", "transient_local", 1),
+        )
+        self.assertEqual(
             self.policy("occupancy_grid", "latched"),
             ("reliable", "transient_local", 1),
         )

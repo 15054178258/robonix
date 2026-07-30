@@ -130,5 +130,27 @@ class StreamingSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.run_healthcheck(expected_success=False)
 
 
+class StreamingConfigurationTest(unittest.TestCase):
+    """Keep the container entrypoint and Compose port wiring coherent."""
+
+    def test_entrypoint_starts_only_the_managed_viewer(self) -> None:
+        entrypoint = (BRIDGE_ROOT / "entrypoint.sh").read_text(encoding="utf-8")
+        self.assertEqual(entrypoint.count("python3 /viewer_server.py"), 1)
+        self.assertNotIn("python3 -m http.server", entrypoint)
+
+    def test_compose_passes_isolated_ports_to_helpers(self) -> None:
+        compose = (SIM_ROOT / "compose.stream.yaml").read_text(encoding="utf-8")
+        self.assertIn(
+            'WEBOTS_FILTER_PORT: "${ROBONIX_SIM_STREAM_PORT:-1235}"', compose
+        )
+        self.assertIn(
+            'WEBOTS_VIEWER_PORT: "${ROBONIX_SIM_VIEWER_PORT:-8080}"', compose
+        )
+        self.assertIn(
+            'WEBOTS_PUBLIC_STREAM_PORT: "${ROBONIX_SIM_STREAM_PORT:-1235}"',
+            compose,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

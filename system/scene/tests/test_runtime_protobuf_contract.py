@@ -15,6 +15,14 @@ SCENE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeProtobufContractTests(unittest.TestCase):
+    def test_runtime_image_contains_the_matching_generator(self):
+        requirements = (
+            SCENE_ROOT / "docker" / "requirements" / "scene-base.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn("grpcio==1.80.0", requirements)
+        self.assertIn("grpcio-tools==1.76.0", requirements)
+        self.assertIn("protobuf==6.33.6", requirements)
+
     def test_launcher_generates_with_runtime_image_without_network(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -25,6 +33,8 @@ class RuntimeProtobufContractTests(unittest.TestCase):
             (scene / "rbnx-build" / "codegen" / "proto_gen").mkdir(parents=True)
             runtime_proto = root / "runtime-proto"
             runtime_proto.mkdir()
+            robonix_api = root / "robonix-api"
+            robonix_api.mkdir()
 
             shutil.copy2(SCENE_ROOT / "scripts" / "start.sh", scene / "scripts")
             shutil.copy2(
@@ -47,8 +57,12 @@ class RuntimeProtobufContractTests(unittest.TestCase):
             (fake_bin / "rbnx").write_text(
                 "#!/usr/bin/env bash\n"
                 "set -eu\n"
-                "[[ \"${1:-}\" == path && \"${2:-}\" == runtime-proto ]]\n"
-                "printf '%s\\n' \"$FAKE_RUNTIME_PROTO\"\n",
+                "[[ \"${1:-}\" == path ]]\n"
+                "case \"${2:-}\" in\n"
+                "  runtime-proto) printf '%s\\n' \"$FAKE_RUNTIME_PROTO\" ;;\n"
+                "  robonix-api) printf '%s\\n' \"$FAKE_ROBONIX_API\" ;;\n"
+                "  *) exit 2 ;;\n"
+                "esac\n",
                 encoding="utf-8",
             )
             (fake_bin / "docker").write_text(
@@ -81,6 +95,7 @@ exit 0
                     "ROBONIX_SCENE_IMAGE": "scene-runtime:test",
                     "SCENE_DATA_DIR": str(root / "scene-data"),
                     "FAKE_RUNTIME_PROTO": str(runtime_proto),
+                    "FAKE_ROBONIX_API": str(robonix_api),
                     "FAKE_DOCKER_LOG": str(docker_log),
                 }
             )
@@ -96,7 +111,11 @@ exit 0
 
             lines = docker_log.read_text(encoding="utf-8").splitlines()
             codegen = next(line for line in lines if "--network none" in line)
-            service = next(line for line in lines if "--network host" in line)
+            service = next(
+                (line for line in lines if "--network host" in line),
+                None,
+            )
+            self.assertIsNotNone(service, f"service docker call missing: {lines}")
             self.assertIn("--entrypoint sh", codegen)
             self.assertIn("grpc_tools.protoc", codegen)
             self.assertIn("--entrypoint /scene/docker/entrypoint.sh", service)
