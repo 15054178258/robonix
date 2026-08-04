@@ -1,0 +1,1 @@
+/home/szh/robonix/examples/webots/scripts/run_python_codegen.sh

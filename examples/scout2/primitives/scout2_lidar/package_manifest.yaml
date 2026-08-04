@@ -1,0 +1,32 @@
+# Scout2 lidar driver — primitive package.
+# One device = one package. This driver exposes the scout2 2D + 3D lidar:
+#   robonix/primitive/lidar/snapshot    → MCP snapshot (LaserScan)
+#   robonix/primitive/lidar/driver      → gRPC lifecycle
+#   robonix/primitive/lidar/lidar       → ROS2 topic_in (LaserScan)
+#   robonix/primitive/lidar/lidar3d     → ROS2 topic_in (PointCloud2)
+
+manifestVersion: 1
+
+package:
+  name: com.robonix.example.scout2_lidar
+  version: 0.1.0
+  vendor: robonix
+  description: Scout2 lidar driver — 2D scan + 3D point cloud snapshot.
+  license: MulanPSL-2.0
+  tags: [primitive, lidar, scout2, agilex, velodyne]
+  maintainers:
+    - Szhu <szh@example.com>
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+stop: |
+  pkill -TERM -f "[s]cout2_lidar.*lidar_driver" 2>/dev/null || true
+  sleep 1
+  pkill -KILL -f "[s]cout2_lidar.*lidar_driver" 2>/dev/null || true
+
+capabilities:
+  - name: robonix/primitive/lidar/snapshot
+  - name: robonix/primitive/lidar/driver
+  - name: robonix/primitive/lidar/lidar
+  - name: robonix/primitive/lidar/lidar3d

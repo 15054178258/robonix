@@ -1,0 +1,79 @@
+# Scout2 Soma robot description
+# Defines the robot model, sensor layout, and capability exports for Soma / Scene.
+# Standard format per vendor-onboarding.md §3.
+
+urdf:
+  path: ./resource/scout_v2.urdf
+  root_link: base_link
+  model_name: scout2
+
+robot:
+  id: scout2
+  display_name: "Scout2"
+  family: mobile_base
+  root_part: base
+
+  # Physical parameters (approximate, verify with datasheet)
+  dimensions: { length_m: 0.925, width_m: 0.38, height_m: 0.21 }
+  mass_kg: 30.0
+
+  # Static chassis footprint — rectangular base (meters, relative to base_link)
+  footprint:
+    base_frame: base_link
+    points:
+      - [0.4625, 0.19]
+      - [0.4625, -0.19]
+      - [-0.4625, -0.19]
+      - [-0.4625, 0.19]
+
+  # Services exported at robot level
+  exports:
+    - provider_id: mapping
+      capabilities:
+        - { path: robonix/service/navigation/navigate, description: "Navigate to a 2D goal." }
+
+  components:
+    - id: base
+      type: mobile_base
+      urdf_link: base_link
+      exports:
+        - provider_id: scout2_chassis
+          capabilities:
+            - { path: robonix/primitive/chassis/move, description: "Command chassis motion." }
+            - { path: robonix/primitive/chassis/twist_in, description: "Accept velocity commands." }
+            - { path: robonix/primitive/chassis/odom, description: "Read chassis odometry." }
+
+      components:
+        - id: rgb_camera
+          type: rgbd_camera
+          urdf_link: camera_link
+          exports:
+            - provider_id: scout2_camera
+              capabilities:
+                - { path: robonix/primitive/camera/rgb, description: "Stream RGB images." }
+                - { path: robonix/primitive/camera/depth, description: "Stream metric depth registered to RGB." }
+                - { path: robonix/primitive/camera/intrinsics, description: "Read CameraInfo for the selected stream." }
+                - { path: robonix/primitive/camera/snapshot, description: "Capture one RGB frame." }
+
+        - id: lidar_2d
+          type: lidar_2d
+          urdf_link: velodyne
+          exports:
+            - provider_id: scout2_lidar
+              capabilities:
+                - { path: robonix/primitive/lidar/lidar, description: "Stream 2D laser scan." }
+
+        - id: lidar_3d
+          type: lidar_3d
+          urdf_link: velodyne
+          exports:
+            - provider_id: scout2_lidar
+              capabilities:
+                - { path: robonix/primitive/lidar/lidar3d, description: "Stream 3D point cloud." }
+
+description:
+  summary: >
+    AgileX Scout2 differential-drive mobile base with RealSense RGB-D camera
+    and Velodyne 2D/3D LiDAR. Intended for indoor navigation and exploration.
+  can_do: ["drive", "navigate", "observe RGB-D", "scan 2D/3D"]
+  cannot_do: ["climb stairs", "operate outdoors in rain"]

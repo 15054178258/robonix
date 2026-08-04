@@ -1,0 +1,33 @@
+# Scout2 driver compose — provides a container that shares the host's DDS
+# graph (network_mode: host) so ROS2 topics from the robot drivers are
+# visible to the primitives running inside.  rbnx boot runs on the host
+# and docker-exec's into this container.
+name: robonix-scout2
+
+services:
+  scout2-driver:
+    build:
+      context: ../../..
+      dockerfile: examples/scout2/docker/Dockerfile
+      args:
+        BASE: ubuntu:22.04
+    container_name: ${ROBONIX_SCOUT2_CONTAINER:-scout2-driver}
+    network_mode: host
+    privileged: true
+    environment:
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+      - ROS_DOMAIN_ID=0
+    volumes:
+      # Mount primitive packages read-only so the driver sees whatever
+      # the host deployed.
+      - ../..:/robonix_pkgs:ro
+      # Device access for CAN, USB cameras, Velodyne.
+      - /dev:/dev
+      # Shared logs for diagnostics.
+      - ./logs:/tmp:rw
+    command: >
+      bash -lc '
+        source /opt/ros/humble/setup.bash
+        echo "[scout2-driver] container ready."
+        sleep infinity
+      '

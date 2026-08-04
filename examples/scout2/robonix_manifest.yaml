@@ -1,0 +1,142 @@
+# Scout2 real-robot deployment manifest
+#
+# boot in sequence: system -> soma+soma+scene -> execution -> interaction
+manifestVersion: 1
+
+catalog:
+  name: robonix.robot.agilex.scout2
+  version: 0.1.0
+  description: Robonix deployment for AgileX Scout2 mobile base with RGB-D camera and 2D/3D LiDAR.
+  license: MulanPSL-2.0
+  tags: [robot, deploy, scout2, agilex, mobile_base]
+  maintainers:
+    - Szhu <szh@example.com>
+
+env:
+  ROS_DOMAIN_ID: "0"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+system:
+  # basic layer
+  atlas:
+    listen: 0.0.0.0:50051
+    log: info
+  # soma+scene layer
+  scene:
+    log: info
+    # Scout2 camera optical frame for scene 3D fusion
+    camera_frame: camera_color_optical_frame
+  # execution layer
+  executor:
+    listen: 127.0.0.1:50061
+    log: info
+  # interaction layer
+  pilot:
+    listen: 127.0.0.1:50071
+    log: debug
+    vlm:
+      upstream: ${VLM_BASE_URL}
+      api_key: ${VLM_API_KEY}
+      model: ${VLM_MODEL}
+      api_format: openai
+  liaison:
+    listen: 0.0.0.0:50081
+    log: info
+    handsfree_enabled: false
+
+# after booted all the system components, start the primitives
+primitive:
+  - name: scout2_chassis
+    path: ./primitives/scout2_chassis
+    config:
+      odom_topic: /odom
+      cmd_vel_topic: /cmd_vel
+  - name: scout2_camera
+    path: ./primitives/scout2_camera
+    config:
+      rgb_topic: /camera/camera/color/image_raw
+      depth_topic: /camera/camera/depth/image_rect_raw
+      camera_info_topic: /camera/camera/color/camera_info
+      extrinsics_topic: /camera/camera/extrinsics/depth_to_color
+      base_frame: base_link
+      # Intrinsics fallback — true CameraInfo on /camera/camera/color/camera_info
+      # is preferred at runtime; these are used only if no CameraInfo topic is found.
+      width: 640
+      height: 480
+      fx: 605.77
+      fy: 605.39
+      cx: 329.25
+      cy: 259.08
+  - name: scout2_lidar
+    path: ./primitives/scout2_lidar
+    config:
+      scan_topic: /scan
+      pointcloud_topic: /velodyne_points
+
+# after booted all the primitives, start the services
+service:
+  # ── Memory services ──────────────────────────────────────────────────
+  - name: memgraph
+    path: ../../services/memory
+    config:
+      backend: memgraph
+
+  - name: memory
+    path: ${ROBONIX_SOURCE_PATH}/services/memsearch
+    config:
+      backend: sqlite
+
+  # ── Speech ───────────────────────────────────────────────────────────
+  - name: speech
+    path: ${ROBONIX_SOURCE_PATH}/services/speech
+    config:
+      disable_whisper: true
+      funasr_device: cuda
+      tts_voice: zh-CN-XiaoxiaoNeural
+      default_speaker_provider_id: audio_driver
+
+  # ── Voiceprint ───────────────────────────────────────────────────────
+  - name: voiceprint
+    path: ${ROBONIX_SOURCE_PATH}/services/voiceprint
+    config: {}
+
+  # ── Mapping — RTAB-Map based ────────────────────────────────────────
+  - name: mapping
+    url: https://github.com/syswonder/service-map-rbnx
+    branch: main
+    config:
+      params_file: config/rtabmap_params.yaml
+      use_sim_time: false
+      occupancy_sources: [lidar, depth]
+      rtabmap_inputs: [lidar, rgbd, odom]
+      sensor_providers:
+        lidar2d: scout2_lidar
+        rgb: scout2_camera
+        depth: scout2_camera
+        odom: scout2_chassis
+
+  # ── Navigation — Nav2 ───────────────────────────────────────────────
+  - name: nav2
+    url: https://github.com/syswonder/service-navigation-rbnx
+    branch: main
+    config:
+      params_file: config/nav2_params.yaml
+      use_sim_time: false
+      action_wait_s: 240.0
+      guard_terminal_xy_m: 0.20
+      dynamic_speed:
+        max_linear_speed_mps: 0.3
+        default_percentage: 75
+      provider_ids:
+        map: mapping
+        odom: scout2_chassis
+        scan: scout2_lidar
+
+# after booted all the services, register the skills
+skill:
+  - name: explore
+    url: https://github.com/syswonder/skill-explore-rbnx
+    branch: main
+    config:
+      explore_mode: frontier
+      timeout_s: 600
