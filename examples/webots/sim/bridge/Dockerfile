@@ -83,8 +83,11 @@ RUN sed -i \
 # Python imports resolve against this image's site-packages + the
 # bind-mounted package dirs under /robonix_pkgs.)
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
-RUN python3 -m pip install --no-cache-dir \
-    "grpcio>=1.78.0" "protobuf>=6.30,<7" mcp "fastmcp>=3" numpy Pillow uvicorn httpx \
+# Upgrade pip first to avoid dependency resolution bugs
+RUN python3 -m pip install --upgrade pip setuptools wheel && \
+    python3 -m pip install --no-cache-dir "fastmcp>=3" && \
+    python3 -m pip install --no-cache-dir \
+    "grpcio>=1.78.0" "protobuf>=6.30,<7" mcp numpy Pillow uvicorn httpx \
     "websockets>=14,<17"
 
 ENV RMW_IMPLEMENTATION=rmw_zenoh_cpp

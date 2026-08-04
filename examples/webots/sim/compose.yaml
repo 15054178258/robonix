@@ -17,6 +17,14 @@ name: ${ROBONIX_SIM_PROJECT:-robonix_tiago_sim}
 
 services:
   sim:
+    deploy:
+      resources:
+        limits:
+          cpus: '2.5'      # Webots GUI 至少给 2 核，否则界面卡顿
+          memory: 6G       # 保留 6GB 给 Webots + ROS2
+        reservations:
+          cpus: '1.5'
+          memory: 4G
     container_name: ${ROBONIX_SIM_CONTAINER:-robonix_tiago_sim}
     build:
       context: ./
