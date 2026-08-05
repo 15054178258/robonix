@@ -46,10 +46,17 @@ system:
 
 # after booted all the system components, start the primitives
 primitive:
+  # - name: scout2_chassis
+  #   path: ./primitives/scout2_chassis
+  #   config:
+  #     odom_topic: /odom
+  #     cmd_vel_topic: /cmd_vel
   - name: scout2_chassis
-    path: ./primitives/scout2_chassis
+    path: ./primitives/primitive-agilex-ranger_mini_v3-chassis-rbnx
     config:
-      odom_topic: /odom
+      chassis_model: scout        # 新增：切换到 scout_ros2
+      port_name: can0             # 确认 Scout2 实际 CAN 接口名
+      can_bitrate: 500000
       cmd_vel_topic: /cmd_vel
   - name: scout2_camera
     path: ./primitives/scout2_camera
@@ -76,29 +83,29 @@ primitive:
 # after booted all the primitives, start the services
 service:
   # ── Memory services ──────────────────────────────────────────────────
-  - name: memgraph
-    path: ../../services/memory
-    config:
-      backend: memgraph
+  # - name: memgraph
+  #   path: ../../services/memory
+  #   config:
+  #     backend: memgraph
 
-  - name: memory
-    path: ${ROBONIX_SOURCE_PATH}/services/memsearch
-    config:
-      backend: sqlite
+  # - name: memory
+  #   path: ${ROBONIX_SOURCE_PATH}/services/memsearch
+  #   config:
+  #     backend: sqlite
 
-  # ── Speech ───────────────────────────────────────────────────────────
-  - name: speech
-    path: ${ROBONIX_SOURCE_PATH}/services/speech
-    config:
-      disable_whisper: true
-      funasr_device: cuda
-      tts_voice: zh-CN-XiaoxiaoNeural
-      default_speaker_provider_id: audio_driver
+  # # ── Speech ───────────────────────────────────────────────────────────
+  # - name: speech
+  #   path: ${ROBONIX_SOURCE_PATH}/services/speech
+  #   config:
+  #     disable_whisper: true
+  #     funasr_device: cuda
+  #     tts_voice: zh-CN-XiaoxiaoNeural
+  #     default_speaker_provider_id: audio_driver
 
-  # ── Voiceprint ───────────────────────────────────────────────────────
-  - name: voiceprint
-    path: ${ROBONIX_SOURCE_PATH}/services/voiceprint
-    config: {}
+  # # ── Voiceprint ───────────────────────────────────────────────────────
+  # - name: voiceprint
+  #   path: ${ROBONIX_SOURCE_PATH}/services/voiceprint
+  #   config: {}
 
   # ── Mapping — RTAB-Map based ────────────────────────────────────────
   - name: mapping
