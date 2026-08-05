@@ -1,0 +1,56 @@
+# AgileX Ranger / Scout chassis primitive.
+#
+# Wraps upstream `ranger_ros2` (vendored under src/ranger_ros2) and
+# `scout_ros2` (vendored under src/scout_ros2), both talking to the chassis
+# CAN bus via `ugv_sdk` (vendored under src/ugv_sdk).  The CAN interface
+# defaults to `can_ranger` and remains config-driven via `port_name:` for
+# hosts that use another stable name.
+#
+# Owns the `primitive/chassis/*` namespace.
+#
+# Lifecycle: start.sh launches the atlas bridge ONLY (no ROS spawn).
+# `rbnx boot` then calls `Driver(CMD_INIT, config_json)` — the handler
+# spawns the appropriate launch file (ranger or scout), waits for the first
+# /odom message, and only THEN declares the data interfaces on atlas.
+#
+# Supported chassis models:
+#   ranger_mini_v1   — through ranger_ros2
+#   ranger_mini_v2   — through ranger_ros2
+#   ranger_mini_v3   — through ranger_ros2 (default)
+#   scout / scout_2  — through scout_ros2  (Scout 2 shares the same CAN
+#                        protocol as Scout V1)
+#
+# Capability surface (mode = abstract pattern, transport = wire):
+#   primitive/chassis/driver    mode=rpc        transport=gRPC
+#   primitive/chassis/odom      mode=topic_out  transport=ROS2  nav_msgs/Odometry
+#   primitive/chassis/twist_in  mode=topic_in   transport=ROS2  geometry_msgs/Twist  (we subscribe to /cmd_vel)
+#   primitive/chassis/move      mode=rpc        transport=gRPC  ExecuteMoveCommand (TODO)
+#
+# Config (passed via `Driver(CMD_INIT, config_json)`):
+#   chassis_model      default "ranger_mini_v3"  — "ranger_mini_v3" or "scout"
+#   port_name          default "can_ranger"      — CAN interface (override per host)
+#   odom_frame         default "odom"
+#   base_frame         default "base_link"
+#   update_rate        default 50
+#   odom_topic_name    default "odom"            — published topic
+#   publish_odom_tf    default false             — dynamic odom -> base_link TF
+#   cmd_vel_topic      default "/cmd_vel"
+#   can_bitrate        default 500000
+#   sentinel_timeout_s default 30.0
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.agilex.ranger_mini_v3.chassis
+  version: 0.1.0
+  description: AgileX Ranger / Scout chassis driver wrapper.
+  tags: [primitive, chassis, agilex, ranger_mini_v3, scout, scout_2, ros2]
+  maintainers: [wheatfox <wheatfox17@icloud.com>]
+  license: Apache-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+capabilities:
+  - name: robonix/primitive/chassis/driver
+  - name: robonix/primitive/chassis/odom
+  - name: robonix/primitive/chassis/twist_in
