@@ -1,0 +1,9 @@
+# robonix/skill/patrol/patrol/status — poll patrol task progress.
+[contract]
+id      = "robonix/skill/patrol/patrol/status"
+version = "1"
+kind    = "skill"
+idl     = "patrol/srv/GetPatrolStatus.srv"
+
+[mode]
+type = "rpc"

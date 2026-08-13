@@ -1,0 +1,9 @@
+# robonix/skill/move/driver — lifecycle driver capability.
+[contract]
+id      = "robonix/skill/move/driver"
+version = "1"
+kind    = "skill"
+idl     = "lifecycle/srv/Driver.srv"
+
+[mode]
+type = "rpc"

@@ -14,7 +14,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://scout_description/meshes/scout_v2/base_link.dae"/>
+        <mesh filename="package://scout_description/meshes/base_link.dae"/>
       </geometry>
     </visual>
     <collision>
@@ -46,7 +46,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://scout_description/meshes/scout_v2/hokuyo.dae"/>
+        <mesh filename="package://scout_description/meshes/hokuyo.dae"/>
       </geometry>
     </visual>
   </link>
@@ -95,7 +95,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://scout_description/meshes/scout_v2/wheel_type1.dae"/>
+        <mesh filename="package://scout_description/meshes/wheel_type1.dae"/>
       </geometry>
     </visual>
     <collision>
@@ -120,7 +120,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://scout_description/meshes/scout_v2/wheel_type2.dae"/>
+        <mesh filename="package://scout_description/meshes/wheel_type2.dae"/>
       </geometry>
     </visual>
     <collision>
@@ -145,7 +145,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://scout_description/meshes/scout_v2/wheel_type1.dae"/>
+        <mesh filename="package://scout_description/meshes/wheel_type1.dae"/>
       </geometry>
     </visual>
     <collision>
@@ -170,7 +170,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://scout_description/meshes/scout_v2/wheel_type2.dae"/>
+        <mesh filename="package://scout_description/meshes/wheel_type2.dae"/>
       </geometry>
     </visual>
     <collision>

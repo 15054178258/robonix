@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "move_skill"
+version = "0.1.0"
+description = "Simple movement skill for teleop-style commands"
+license = {text = "MulanPSL-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "robonix-api",
+    "rclpy",
+    "geometry-msgs",
+]
+
+[tool.setuptools.packages.find]
+include = ["move_skill*"]

@@ -1,0 +1,14 @@
+# robonix/skill/patrol/patrol — start a multi-waypoint patrol task.
+# The robot navigates to each waypoint in order using nav2, captures
+# a photo at each stop, and saves images to disk. Returns a run_id
+# immediately; use the status contract to poll progress.
+string[] waypoint_names     # optional human-readable names for each waypoint
+float32[] waypoint_x        # x coordinates in map frame (metres)
+float32[] waypoint_y        # y coordinates in map frame (metres)
+float32[] waypoint_yaw      # yaw at each waypoint (radians); 0 = no heading constraint
+string save_dir             # directory to save photos (absolute or relative to skill data)
+float32 settle_time_s       # wait time after arriving before capturing photo (seconds)
+---
+bool accepted               # false if another patrol task is already running
+string run_id               # uuid handle; empty when accepted=false. Pass to status/cancel.
+string message              # human-readable detail

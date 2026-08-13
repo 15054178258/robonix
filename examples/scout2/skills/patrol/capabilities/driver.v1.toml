@@ -1,0 +1,9 @@
+# robonix/skill/patrol/driver — lifecycle driver capability.
+[contract]
+id      = "robonix/skill/patrol/driver"
+version = "1"
+kind    = "skill"
+idl     = "lifecycle/srv/Driver.srv"
+
+[mode]
+type = "rpc"

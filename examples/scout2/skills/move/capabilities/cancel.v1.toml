@@ -1,0 +1,9 @@
+# robonix/skill/move/move/cancel — cancel a running move task.
+[contract]
+id      = "robonix/skill/move/move/cancel"
+version = "1"
+kind    = "skill"
+idl     = "move/srv/CancelMove.srv"
+
+[mode]
+type = "rpc"

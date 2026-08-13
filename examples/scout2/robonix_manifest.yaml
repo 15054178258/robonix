@@ -28,11 +28,11 @@ system:
     camera_frame: camera_color_optical_frame
   # execution layer
   executor:
-    listen: 127.0.0.1:50061
+    listen: 0.0.0.0:50061
     log: info
   # interaction layer
   pilot:
-    listen: 127.0.0.1:50071
+    listen: 0.0.0.0:50071
     log: debug
     vlm:
       upstream: ${VLM_BASE_URL}
@@ -46,16 +46,14 @@ system:
 
 # after booted all the system components, start the primitives
 primitive:
-  # - name: scout2_chassis
-  #   path: ./primitives/scout2_chassis
-  #   config:
-  #     odom_topic: /odom
-  #     cmd_vel_topic: /cmd_vel
+  - name: robot_description
+    path: ./primitives/primitive-robot-description-rbnx
+    manifest: package_manifest.native.yaml
   - name: scout2_chassis
     path: ./primitives/primitive-agilex-ranger_mini_v3-chassis-rbnx
     config:
-      chassis_model: scout        # 新增：切换到 scout_ros2
-      port_name: can0             # 确认 Scout2 实际 CAN 接口名
+      chassis_model: scout
+      port_name: can0
       can_bitrate: 500000
       cmd_vel_topic: /cmd_vel
   - name: scout2_camera
@@ -68,8 +66,8 @@ primitive:
       base_frame: base_link
       # Intrinsics fallback — true CameraInfo on /camera/camera/color/camera_info
       # is preferred at runtime; these are used only if no CameraInfo topic is found.
-      width: 640
-      height: 480
+      width: 424
+      height: 240
       fx: 605.77
       fy: 605.39
       cx: 329.25
@@ -83,15 +81,15 @@ primitive:
 # after booted all the primitives, start the services
 service:
   # ── Memory services ──────────────────────────────────────────────────
-  # - name: memgraph
-  #   path: ../../services/memory
-  #   config:
-  #     backend: memgraph
+  - name: memgraph
+    path: ../../services/memory
+    config:
+      backend: memgraph
 
-  # - name: memory
-  #   path: ${ROBONIX_SOURCE_PATH}/services/memsearch
-  #   config:
-  #     backend: sqlite
+  - name: memory
+    path: ${ROBONIX_SOURCE_PATH}/services/memsearch
+    config:
+      backend: sqlite
 
   # # ── Speech ───────────────────────────────────────────────────────────
   # - name: speech
@@ -109,41 +107,66 @@ service:
 
   # ── Mapping — RTAB-Map based ────────────────────────────────────────
   - name: mapping
-    url: https://github.com/syswonder/service-map-rbnx
-    branch: main
+    path: ./services/service-map-rbnx
     config:
+      webui_port: 8091
+      # Production localization uses chassis odometry. The timestamped Mid360
+      # cloud is deskewed against odom before RTAB-Map consumes it.
+      # Use RGB for visual constraints and fuse depth with Mid360 occupancy.
+      # Camera data stays inside RTAB-Map; Nav2 LaserScan remains lidar-only.
+      # Use the chassis odom until a separately declared Mid360 LIO provider
+      # passes the static-drift gate. RTAB-Map still fuses RGB-D and Mid360.
+      deskew_lidar: true
+      # Fuse the front Gemini depth projection with Mid360 in the 2D occupancy
+      # grid. Nav2's LaserScan input remains lidar-only.
+      occupancy_sources: [lidar]
       params_file: config/rtabmap_params.yaml
-      use_sim_time: false
-      occupancy_sources: [lidar, depth]
-      rtabmap_inputs: [lidar, rgbd, odom]
       sensor_providers:
-        lidar2d: scout2_lidar
-        rgb: scout2_camera
-        depth: scout2_camera
+        lidar3d: scout2_lidar
         odom: scout2_chassis
-
+          #rgb: scout2_camera
+          #depth: scout2_camera
+  
   # ── Navigation — Nav2 ───────────────────────────────────────────────
   - name: nav2
     url: https://github.com/syswonder/service-navigation-rbnx
     branch: main
     config:
       params_file: config/nav2_params.yaml
+      bt_xml_file: config/navigate.xml
       use_sim_time: false
       action_wait_s: 240.0
       guard_terminal_xy_m: 0.20
       dynamic_speed:
         max_linear_speed_mps: 0.3
         default_percentage: 75
+        step_percentage: 20
+        min_percentage: 20
+      scan_projection:
+        enabled: true
+        min_height_m: 0.45
+        max_height_m: 1.20
+        range_max_m: 12.0
+        self_filter_margin_m: 0.20
       provider_ids:
         map: mapping
         odom: scout2_chassis
         scan: scout2_lidar
+          #scan_cloud: scout2_lidar
+          #topic_remap:
+          #scan: ""        
 
 # after booted all the services, register the skills
 skill:
   - name: explore
-    url: https://github.com/syswonder/skill-explore-rbnx
-    branch: main
+    path: ./skills/skill-explore-rbnx
+    #url: https://github.com/syswonder/skill-explore-rbnx
+    #branch: main
     config:
       explore_mode: frontier
       timeout_s: 600
+  - name: move
+    path: ./skills/move
+  - name: patrol
+    path: ./skills/patrol
+    config: {}

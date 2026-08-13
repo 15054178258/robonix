@@ -1,0 +1,6 @@
+# robonix/skill/move/move/status — poll move task status.
+string run_id               # task id (empty = most recent)
+---
+bool known                  # false if no task with that id
+string state                # PENDING | RUNNING | SUCCEEDED | FAILED | CANCELED
+string detail               # human-readable

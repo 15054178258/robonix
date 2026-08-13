@@ -1,0 +1,16 @@
+# robonix/skill/patrol/patrol — multi-waypoint patrol with photo capture.
+# User-invocable: navigate to a sequence of waypoints using nav2, take
+# a photo at each stop, and save images to disk. Returns run_id; callers
+# poll status/cancel via sibling contracts.
+[contract]
+id      = "robonix/skill/patrol/patrol"
+version = "1"
+kind    = "skill"
+idl     = "patrol/srv/Patrol.srv"
+description = "Start a multi-waypoint patrol: navigate via nav2, capture photos at each stop. Params: waypoint_x/y/yaw arrays, save_dir, settle_time_s."
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

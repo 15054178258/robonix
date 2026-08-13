@@ -1,0 +1,14 @@
+# robonix/skill/move/move — simple movement command.
+# Accepts direction (forward/backward/left/right/rotate) and
+# distance (meters) or angle (degrees).
+[contract]
+id      = "robonix/skill/move/move"
+version = "1"
+kind    = "skill"
+idl     = "move/srv/Move.srv"
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

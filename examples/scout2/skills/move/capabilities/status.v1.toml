@@ -1,0 +1,9 @@
+# robonix/skill/move/move/status — poll move task status.
+[contract]
+id      = "robonix/skill/move/move/status"
+version = "1"
+kind    = "skill"
+idl     = "move/srv/GetMoveStatus.srv"
+
+[mode]
+type = "rpc"

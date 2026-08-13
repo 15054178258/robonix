@@ -84,6 +84,17 @@ _DEFAULT_OPEN_VOCAB = [
     "door", "doorway", "fire extinguisher", "person",
 ]
 
+_SDSYS_OPEN_VOCAB = [
+    "TV",           # 电视
+    "box",          # 箱子
+    "door",         # 门
+    "lamp",         # 灯架
+    "chair",        # 椅子
+    "table",        # 桌子
+    "robot",        # 机器人
+    "cup",          # 水杯
+]
+
 _BG_CLASSES = frozenset({"floor", "wall", "ceiling", "carpet"})
 
 # Classes we never want to insert (unstable / outdoor / not useful for indoor robot).
@@ -93,7 +104,7 @@ _IGNORED_CLASSES = frozenset({"person"})
 def _resolved_classes() -> list[str]:
     raw = os.environ.get("SCENE_OPEN_VOCAB_CLASSES", "").strip()
     if not raw:
-        return list(_DEFAULT_OPEN_VOCAB)
+        return list(_SDSYS_OPEN_VOCAB)
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
@@ -182,6 +193,13 @@ _CFG_DEFAULTS = {
     # collapse them.
     "denoise_interval_ticks": 10,
     "merge_overlap_interval_ticks": 10,
+    # Detection interval: run the full YOLO-World + MobileSAM + CLIP
+    # pipeline every N ticks; intermediate ticks skip detection entirely
+    # (MapObjectList + registry stay unchanged). 1 = every tick (legacy
+    # behaviour); 3 = detect once every 3 ticks (~1.8 s at 0.6 s period).
+    # Saves ~65 % GPU on the common "robot sitting still" case without
+    # losing new-object discovery (just delayed by 1–2 ticks).
+    "detection_interval_ticks": 3,
     # Periodic-cleanup thresholds (passed to merge_overlap_objects /
     # denoise_objects in concept-graphs.utils). obj_min_points is the cull
     # gate inside filter_objects: thin/small objects (keyboard, lamp) backproject
@@ -436,6 +454,17 @@ class ConceptGraphsDetector:
         # schedule the actual mutation on the asyncio loop (the registry
         # uses asyncio.Lock, not a sync lock).
         self._asyncio_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Adaptive tick rate: when the robot is stationary, sleep longer
+        # to save compute.  `_idle_period_s` is the reduced frequency
+        # (default 2 s); `_stationary_threshold` is the displacement (m)
+        # below which we consider the robot not moving.
+        self._idle_period_s = float(
+            os.environ.get("SCENE_CG_IDLE_PERIOD_S", "2.0").strip() or "2.0"
+        )
+        self._stationary_threshold = float(
+            os.environ.get("SCENE_CG_STATIONARY_THRESH_M", "0.01").strip() or "0.01"
+        )
+        self._prev_chassis_xy: Optional[tuple[float, float]] = None
 
         self.cfg = dict(_CFG_DEFAULTS)
         if cfg_overrides:
@@ -456,6 +485,7 @@ class ConceptGraphsDetector:
             ("SCENE_CG_MERGE_OVERLAP_THRESH", "merge_overlap_thresh", float),
             ("SCENE_CG_MERGE_VISUAL_SIM_THRESH", "merge_visual_sim_thresh", float),
             ("SCENE_CG_SAME_CLASS_MERGE_DIST_M", "same_class_merge_dist_m", float),
+            ("SCENE_CG_DETECTION_INTERVAL", "detection_interval_ticks", int),
         ):
             v = os.environ.get(env, "").strip()
             if v:
@@ -513,9 +543,11 @@ class ConceptGraphsDetector:
         self._stop.clear()
         self._task = asyncio.create_task(self._loop(), name="scene-cg-detector")
         log.info(
-            "ConceptGraphsDetector started (period=%.1fs, classes=%d, device=%s, "
-            "voxel=%s, merge_threshold=%s)",
-            self._period_s, len(self._classes), self._device,
+            "ConceptGraphsDetector started (period=%.1fs, idle=%.1fs, "
+            "det_interval=%d, classes=%d, device=%s, voxel=%s, merge_threshold=%s)",
+            self._period_s, self._idle_period_s,
+            int(self.cfg.get("detection_interval_ticks", 1)),
+            len(self._classes), self._device,
             self.cfg["downsample_voxel_size"], self.cfg["merge_threshold"],
         )
 
@@ -709,7 +741,32 @@ class ConceptGraphsDetector:
             except Exception as e:  # noqa: BLE001
                 log.exception("cg tick error: %s", e)
             elapsed = time.monotonic() - t0
-            await asyncio.sleep(max(0.0, self._period_s - elapsed))
+            period = self._adaptive_period()
+            await asyncio.sleep(max(0.0, period - elapsed))
+
+    def _adaptive_period(self) -> float:
+        """Return the sleep duration for the next tick.
+
+        When the robot is stationary (displacement below
+        ``_stationary_threshold``), return ``_idle_period_s`` (default
+        2 s) instead of the normal ``_period_s`` (0.6 s) to save GPU
+        compute.  The chassis pose is read once per tick via the
+        existing ``_chassis`` callback — no extra hardware queries.
+        """
+        try:
+            chassis = self._chassis()
+        except Exception:
+            chassis = None
+        if chassis is not None:
+            x, y = float(chassis[0]), float(chassis[1])
+            prev = self._prev_chassis_xy
+            self._prev_chassis_xy = (x, y)
+            if prev is not None:
+                dx = x - prev[0]
+                dy = y - prev[1]
+                if (dx * dx + dy * dy) ** 0.5 < self._stationary_threshold:
+                    return self._idle_period_s
+        return self._period_s
 
     def _tick_once(self) -> None:
         with self._inference_lock:
@@ -743,6 +800,21 @@ class ConceptGraphsDetector:
         depth = _depth_msg_to_metres(depth_msg)
         if rgb is None or depth is None:
             return
+
+        # ── Detection interval gate ──────────────────────────────────
+        # Skip the expensive YOLO-World + MobileSAM + CLIP pipeline on
+        # non-detection ticks.  The MapObjectList and registry stay
+        # unchanged; periodic cleanup and projection still run at the
+        # end of every tick so stale objects get GC'd on schedule.
+        det_interval = max(1, int(self.cfg.get("detection_interval_ticks", 1)))
+        self._tick_idx += 1
+        if det_interval > 1 and (self._tick_idx % det_interval) != 1:
+            log.debug("[scene-cg] tick %d: skip detect (interval=%d)",
+                      self._tick_idx, det_interval)
+            self._maybe_periodic_cleanup()
+            self._project_to_registry()
+            return
+
         # YOLO-World predict expects RGB in standard channel order.
         # Internal Ultralytics handles BGR-as-input fine but CLIP later
         # needs RGB. Convert once here.
@@ -1139,7 +1211,6 @@ class ConceptGraphsDetector:
                     log.warning("concept-graphs merge pipeline failed: %s", e)
                 return
 
-        self._tick_idx += 1
         self._maybe_periodic_cleanup()
         self._project_to_registry()
 

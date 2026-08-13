@@ -1,0 +1,353 @@
+# SPDX-License-Identifier: MulanPSL-2.0
+"""move_rbnx — simple movement skill (atlas bridge).
+
+A user-invocable skill: accepts direction + distance/angle and executes
+the movement by publishing directly to /cmd_vel.
+
+Directions: forward, backward, left (strafe), right (strafe), rotate_cw,
+rotate_ccw, stop.
+
+Async mode: returns run_id immediately, caller polls status/cancel.
+Duplicate detection: skips re-execution of same command within 15 seconds.
+"""
+from __future__ import annotations
+
+import logging
+import math
+import os
+import threading
+import time
+import uuid
+from collections import deque
+
+from robonix_api import Skill, Ok, Err
+
+log = logging.getLogger("move_skill")
+
+move_skill = Skill(id="move", namespace="robonix/skill/move")
+
+# ROS2 publisher for cmd_vel
+_cmd_vel_pub = None
+_ros_node = None
+_ros_thread = None
+
+# Task tracking
+_tasks: dict[str, dict] = {}
+_task_lock = threading.Lock()
+
+# Duplicate detection — track all recent commands, not just the last one
+_recent_commands: deque[tuple[tuple, float]] = deque(maxlen=20)
+_DUPLICATE_WINDOW: float = 15.0  # seconds
+
+# Default speeds
+LINEAR_SPEED = 0.2   # m/s
+ANGULAR_SPEED = 0.5  # rad/s
+STRAFE_SPEED = 0.2   # m/s
+
+
+def _get_ros_node():
+    """Get or create a ROS2 node."""
+    global _ros_node, _cmd_vel_pub
+    if _ros_node is None:
+        import rclpy
+        from rclpy.node import Node
+        from geometry_msgs.msg import Twist
+
+        if not rclpy.ok():
+            rclpy.init()
+
+        _ros_node = Node("move_skill")
+        _cmd_vel_pub = _ros_node.create_publisher(
+            Twist, "/cmd_vel", qos_profile=10
+        )
+        log.info("ROS2 node created, publishing to /cmd_vel")
+    return _ros_node
+
+
+def _spin_ros():
+    """Spin the ROS2 node in a background thread."""
+    import rclpy
+    node = _get_ros_node()
+    rclpy.spin(node)
+
+
+def _publish_twist(linear_x: float = 0.0, linear_y: float = 0.0,
+                   angular_z: float = 0.0, duration: float = 0.0):
+    """Publish a Twist message for a specified duration."""
+    from geometry_msgs.msg import Twist
+
+    node = _get_ros_node()
+    if _cmd_vel_pub is None:
+        raise RuntimeError("cmd_vel publisher not initialized")
+
+    msg = Twist()
+    msg.linear.x = linear_x
+    msg.linear.y = linear_y
+    msg.angular.z = angular_z
+
+    if duration <= 0:
+        # Single publish
+        _cmd_vel_pub.publish(msg)
+        return
+
+    # Publish for duration, then stop
+    rate = node.create_rate(10)  # 10 Hz
+    end_time = time.time() + duration
+    while time.time() < end_time:
+        _cmd_vel_pub.publish(msg)
+        rate.sleep()
+
+    # Stop
+    _cmd_vel_pub.publish(Twist())
+
+
+def _is_duplicate(direction: str, value: float, speed: float) -> bool:
+    """Check if this command was seen recently (within _DUPLICATE_WINDOW).
+
+    Tracks all recent commands in a deque, not just the last one, so
+    duplicate detection survives interleaved different commands and
+    pilot retry bursts spaced >1 s apart.
+    """
+    now = time.time()
+    cmd = (direction, value, speed)
+
+    with _task_lock:
+        # Expire old entries
+        while _recent_commands and now - _recent_commands[0][1] > _DUPLICATE_WINDOW:
+            _recent_commands.popleft()
+
+        # Check if this exact command was seen recently
+        for recent_cmd, _ts in _recent_commands:
+            if recent_cmd == cmd:
+                log.info("duplicate command detected, skipping: %s", cmd)
+                return True
+
+        _recent_commands.append((cmd, now))
+        return False
+
+
+def _execute_move(task_id: str, direction: str, value: float, speed: float):
+    """Execute a move command in a background thread."""
+    try:
+        # Check for duplicate
+        if _is_duplicate(direction, value, speed):
+            with _task_lock:
+                _tasks[task_id]["state"] = "SUCCEEDED"
+                _tasks[task_id]["detail"] = "duplicate command, skipped"
+            return
+
+        with _task_lock:
+            _tasks[task_id]["state"] = "RUNNING"
+
+        if direction == "forward":
+            s = speed if speed > 0 else LINEAR_SPEED
+            duration = abs(value) / abs(s) if s > 0 else 1.0
+            _publish_twist(linear_x=s, duration=duration)
+            result = f"moved forward {value}m at {s}m/s"
+
+        elif direction == "backward":
+            s = speed if speed > 0 else LINEAR_SPEED
+            duration = abs(value) / abs(s) if s > 0 else 1.0
+            _publish_twist(linear_x=-s, duration=duration)
+            result = f"moved backward {value}m at {s}m/s"
+
+        elif direction == "left":
+            s = speed if speed > 0 else STRAFE_SPEED
+            duration = value / s if s > 0 else 1.0
+            _publish_twist(linear_y=s, duration=duration)
+            result = f"strafed left {value}m at {s}m/s"
+
+        elif direction == "right":
+            s = speed if speed > 0 else STRAFE_SPEED
+            duration = value / s if s > 0 else 1.0
+            _publish_twist(linear_y=-s, duration=duration)
+            result = f"strafed right {value}m at {s}m/s"
+
+        elif direction == "rotate_cw":
+            s = speed if speed > 0 else ANGULAR_SPEED
+            angle_rad = math.radians(value)
+            duration = abs(angle_rad) / abs(s) if s > 0 else 1.0
+            _publish_twist(angular_z=-s, duration=duration)
+            result = f"rotated CW {value}deg at {s}rad/s"
+
+        elif direction == "rotate_ccw":
+            s = speed if speed > 0 else ANGULAR_SPEED
+            angle_rad = math.radians(value)
+            duration = abs(angle_rad) / abs(s) if s > 0 else 1.0
+            _publish_twist(angular_z=s, duration=duration)
+            result = f"rotated CCW {value}deg at {s}rad/s"
+
+        elif direction == "stop":
+            _publish_twist()
+            result = "stopped"
+
+        else:
+            raise ValueError(f"unknown direction: {direction}")
+
+        with _task_lock:
+            _tasks[task_id]["state"] = "SUCCEEDED"
+            _tasks[task_id]["detail"] = result
+        log.info("task %s completed: %s", task_id, result)
+
+    except Exception as e:
+        with _task_lock:
+            _tasks[task_id]["state"] = "FAILED"
+            _tasks[task_id]["detail"] = str(e)
+        log.error("task %s failed: %s", task_id, e)
+
+
+# ── MCP tools ────────────────────────────────────────────────────────────────
+from move_mcp import (  # noqa: E402
+    Move_Request, Move_Response,
+    GetMoveStatus_Request, GetMoveStatus_Response,
+    CancelMove_Request, CancelMove_Response,
+)
+
+
+@move_skill.mcp("robonix/skill/move/move")
+def move(req: Move_Request) -> Move_Response:
+    """Execute a movement command (async). Returns run_id; poll status() to track."""
+    task_id = str(uuid.uuid4())[:8]
+
+    with _task_lock:
+        _tasks[task_id] = {
+            "state": "PENDING",
+            "detail": f"moving {req.direction}",
+            "direction": req.direction,
+            "value": req.value,
+            "speed": req.speed,
+        }
+
+    # Start move in background thread
+    thread = threading.Thread(
+        target=_execute_move,
+        args=(task_id, req.direction, req.value, req.speed),
+        daemon=True,
+    )
+    thread.start()
+
+    return Move_Response(
+        accepted=True,
+        run_id=task_id,
+        message=f"move started: {req.direction} {req.value}",
+    )
+
+
+@move_skill.mcp("robonix/skill/move/move/status")
+def status(req: GetMoveStatus_Request) -> GetMoveStatus_Response:
+    """Poll progress of a running move task. Empty run_id = most recent."""
+    run_id = req.run_id
+
+    with _task_lock:
+        if not run_id:
+            # Get most recent task
+            if not _tasks:
+                return GetMoveStatus_Response(known=False, state="PENDING", detail="no tasks")
+            run_id = max(_tasks.keys(), key=lambda k: _tasks[k].get("created", 0))
+
+        task = _tasks.get(run_id)
+        if task is None:
+            return GetMoveStatus_Response(known=False, state="PENDING", detail="no such task")
+
+        return GetMoveStatus_Response(
+            known=True,
+            state=task["state"],
+            detail=task["detail"],
+        )
+
+
+@move_skill.mcp("robonix/skill/move/move/cancel")
+def cancel(req: CancelMove_Request) -> CancelMove_Response:
+    """Abort the active move. Idempotent."""
+    run_id = req.run_id
+
+    with _task_lock:
+        if not run_id:
+            # Cancel most recent running task
+            for tid, task in _tasks.items():
+                if task["state"] == "RUNNING":
+                    task["state"] = "CANCELED"
+                    task["detail"] = "canceled by user"
+                    # Stop the robot
+                    _publish_twist()
+                    return CancelMove_Response(ok=True, message=f"canceled task {tid}")
+            return CancelMove_Response(ok=False, message="no running tasks")
+
+        task = _tasks.get(run_id)
+        if task is None:
+            return CancelMove_Response(ok=False, message="no such task")
+
+        if task["state"] in ("SUCCEEDED", "FAILED", "CANCELED"):
+            return CancelMove_Response(ok=False, message=f"task already {task['state']}")
+
+        task["state"] = "CANCELED"
+        task["detail"] = "canceled by user"
+        _publish_twist()  # Stop the robot
+        return CancelMove_Response(ok=True, message=f"canceled task {run_id}")
+
+
+# ── lifecycle ────────────────────────────────────────────────────────────────
+@move_skill.on_init
+def init(cfg):
+    """CMD_INIT: light. Just log."""
+    log.info("CMD_INIT ok")
+    return Ok()
+
+
+@move_skill.on_activate
+def activate():
+    """CMD_ACTIVATE: initialize ROS2 and start spinning."""
+    global _ros_thread
+    if _ros_thread is not None:
+        log.info("CMD_ACTIVATE — already running, no-op")
+        return Ok()
+
+    try:
+        _get_ros_node()
+        _ros_thread = threading.Thread(target=_spin_ros, daemon=True)
+        _ros_thread.start()
+        log.info("CMD_ACTIVATE ok — ROS2 spinning")
+        return Ok()
+    except Exception as e:
+        return Err(f"move skill activate failed: {e}")
+
+
+@move_skill.on_deactivate
+def deactivate():
+    """CMD_DEACTIVATE: stop ROS2."""
+    global _ros_node, _ros_thread, _cmd_vel_pub
+
+    # Send stop command before shutting down
+    if _cmd_vel_pub is not None:
+        try:
+            from geometry_msgs.msg import Twist
+            _cmd_vel_pub.publish(Twist())
+        except Exception:
+            pass
+
+    if _ros_node is not None:
+        try:
+            _ros_node.destroy_node()
+        except Exception:
+            pass
+        _ros_node = None
+        _cmd_vel_pub = None
+
+    _ros_thread = None
+    log.info("CMD_DEACTIVATE ok")
+    return Ok()
+
+
+def main() -> int:
+    import rclpy
+    move_skill.run()
+    if _ros_node is not None:
+        _ros_node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

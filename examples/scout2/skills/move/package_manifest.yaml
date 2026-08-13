@@ -1,0 +1,25 @@
+# move_rbnx — simple movement skill for teleop-style commands.
+#
+# kind: skill (user-invocable). LLM/pilot calls robonix/skill/move/move()
+# with direction + distance/angle. Returns run_id; poll status/cancel.
+manifestVersion: 1
+
+package:
+  name: robonix.skill.move
+  version: 0.1.0
+  description: Simple movement skill for forward/backward/left/right/rotate commands.
+  tags: [skill, move, teleop, chassis]
+  license: MulanPSL-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+capabilities:
+  - name: robonix/skill/move/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/move/move
+    path: capabilities/move.v1.toml
+  - name: robonix/skill/move/move/status
+    path: capabilities/status.v1.toml
+  - name: robonix/skill/move/move/cancel
+    path: capabilities/cancel.v1.toml

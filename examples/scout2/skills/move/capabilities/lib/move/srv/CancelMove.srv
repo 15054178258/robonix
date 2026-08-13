@@ -1,0 +1,5 @@
+# robonix/skill/move/move/cancel — cancel a running move task.
+string run_id               # task id (empty = most recent)
+---
+bool ok
+string message

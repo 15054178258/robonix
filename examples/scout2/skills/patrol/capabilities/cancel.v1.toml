@@ -1,0 +1,9 @@
+# robonix/skill/patrol/patrol/cancel — cancel a running patrol task.
+[contract]
+id      = "robonix/skill/patrol/patrol/cancel"
+version = "1"
+kind    = "skill"
+idl     = "patrol/srv/CancelPatrol.srv"
+
+[mode]
+type = "rpc"

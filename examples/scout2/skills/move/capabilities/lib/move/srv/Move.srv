@@ -1,0 +1,8 @@
+# robonix/skill/move/move — execute a simple movement command.
+string direction            # forward, backward, left, right, rotate_cw, rotate_ccw, stop
+float32 value               # distance (m) for linear moves, angle (deg) for rotations
+float32 speed               # optional speed override (m/s or rad/s), 0 = use default
+---
+bool accepted               # false if command could not be executed
+string run_id               # task id for status polling
+string message              # human-readable result

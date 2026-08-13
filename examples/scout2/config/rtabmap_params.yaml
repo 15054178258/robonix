@@ -10,6 +10,9 @@ Grid/3D: false
 Grid/NormalsSegmentation: false
 Grid/MaxObstacleHeight: 1.0
 Grid/MaxGroundHeight: 0.1
+Grid/FootprintLength: 0.96
+Grid/FootprintWidth: 0.64
+Grid/RangeMin: 0.10
 Reg/Strategy: 1
 Reg/Force3DoF: true
 Optimizer/Strategy: 1

@@ -1,0 +1,28 @@
+# patrol_rbnx — multi-waypoint patrol skill with photo capture.
+#
+# kind: skill (user-invocable). LLM/pilot calls robonix/skill/patrol/patrol()
+# with waypoint coordinates and save directory. Returns run_id; poll status/cancel.
+# Internally orchestrates:
+#   - service/navigation/navigate    (drive to each waypoint)
+#   - primitive/camera/snapshot      (capture photo at each stop)
+manifestVersion: 1
+
+package:
+  name: robonix.skill.patrol
+  version: 0.1.0
+  description: Multi-waypoint patrol skill with nav2 navigation and photo capture.
+  tags: [skill, patrol, navigation, camera, inspection]
+  license: MulanPSL-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+capabilities:
+  - name: robonix/skill/patrol/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/patrol/patrol
+    path: capabilities/patrol.v1.toml
+  - name: robonix/skill/patrol/patrol/status
+    path: capabilities/status.v1.toml
+  - name: robonix/skill/patrol/patrol/cancel
+    path: capabilities/cancel.v1.toml

@@ -8,21 +8,29 @@
 planner_server:
   ros__parameters:
     use_sim_time: false
-    expected_planner_frequency: 10.0
+    expected_planner_frequency: 5.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 1.0                          # 建议改成 1.0，给大车体更多余量
-      use_astar: true                        # 强烈建议改成 true，搜索更快
+      plugin: "robonix_nav2_terminal::GoalAwareNavfnPlanner"
+      # Prefer a zero-unknown route. If none exists for a known goal, accept
+      # only a short map-coverage gap; larger unknown shortcuts are rejected.
+      max_unknown_ratio: 0.05
+      max_unknown_length: 0.75
+      max_unknown_run: 0.40
+    GridBased_known:
+      tolerance: 0.5
+      allow_unknown: false
+    GridBased_unknown:
+      tolerance: 0.5
       allow_unknown: true
-    tf_buffer_duration: 0.5
+    tf_buffer_duration: 0.5  # 秒
 
 
 controller_server:
   ros__parameters:
     use_sim_time: false
     odom_topic: "__ROBONIX_ODOM_TOPIC__"
-    controller_frequency: 10.0
+    controller_frequency: 5.0
     failure_tolerance: 0.5
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
@@ -36,7 +44,7 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.65
+      xy_goal_tolerance: 0.25
       yaw_goal_tolerance: 0.25
     # general_goal_checker:
     #   plugin: "robonix_nav2_terminal::PersistentGoalChecker"
@@ -52,16 +60,16 @@ controller_server:
       debug_trajectory_details: True
       min_vel_x: 0.00
       min_vel_y: 0.0
-      max_vel_x: 0.5
+      max_vel_x: 0.3
       max_vel_y: 0.0
       max_vel_theta: 0.6
       min_speed_xy: 0.0
-      max_speed_xy: 0.5
+      max_speed_xy: 0.3
       min_speed_theta: 0.0
-      acc_lim_x: 0.8
+      acc_lim_x: 0.5
       acc_lim_y: 0.0
       acc_lim_theta: 1.0
-      decel_lim_x: -0.8
+      decel_lim_x: -0.5
       decel_lim_y: -0.0
       decel_lim_theta: -1.0
       vx_samples: 20
@@ -71,24 +79,32 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.05
       transform_tolerance: 0.5
-      xy_goal_tolerance: 0.65
+      xy_goal_tolerance: 0.20
       yaw_goal_tolerance: 0.20
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
       stateful: True
-      # ========== 切换为标准 RotateToGoal，移除 PersistentRotateToGoal ==========
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      # 障碍物与路径跟踪权重（保持你调好的高刚性，防止切弯）
+      critics: ["PersistentRotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       BaseObstacle.scale: 0.02
+      # Was 1.0 — too dominant, caused over-correction on curved paths (circling).
       PathAlign.scale: 32.0
       GoalAlign.scale: 24.0
       PathDist.scale: 32.0
-      GoalDist.scale: 12.0                # 保持 12，避免末端急刹
-      # ========== 标准 RotateToGoal 专属调参（适应 Scout2 大车体） ==========
-      RotateToGoal.scale: 32.0
-      RotateToGoal.slowing_factor: 3.0    # 降低减速因子（原5.0），让旋转更平顺
-      RotateToGoal.lookahead_time: -1.0    # 关键！原-1.0（无限前瞻）会导致提前扭头。设为0.3秒，仅在最后0.3米内才旋转调姿，近似模拟你之前 rotation_margin: 0.15 的效果
-      RotateToGoal.xy_goal_tolerance: 0.65 # 与上方 DWB 的 xy 容差保持一致
+      GoalDist.scale: 12.0
+      PersistentRotateToGoal.class: "robonix_nav2_terminal::PersistentRotateToGoalCritic"
+      PersistentRotateToGoal.xy_enter_tolerance: 0.30
+      PersistentRotateToGoal.xy_exit_tolerance: 0.45
+      PersistentRotateToGoal.yaw_enter_tolerance: 0.25
+      PersistentRotateToGoal.yaw_exit_tolerance: 0.30
+      PersistentRotateToGoal.stopped_linear_velocity: 0.05
+      PersistentRotateToGoal.max_terminal_angular_velocity: 0.30
+      PersistentRotateToGoal.slowing_factor: 3.0
+      PersistentRotateToGoal.lookahead_time: 0.5
+      PersistentRotateToGoal.max_terminal_duration: 15.0
+      PersistentRotateToGoal.no_progress_timeout: 3.0
+      PersistentRotateToGoal.min_yaw_progress: 0.04
+      # Was 0.50 — triggered rotation too early, interfering with path following.
+      PersistentRotateToGoal.rotation_margin: 0.15
 
 
 bt_navigator:
@@ -122,23 +138,21 @@ local_costmap:
       resolution: 0.05
       # Octagonal footprint covering chassis + wheels (from URDF).
       # Chassis corners: (±0.46, ±0.19). Wheel outer edges: x ±0.41, y ±0.35.
-      footprint: "[[0.5, 0.4], [-0.5, 0.4], [-0.5, -0.4], [0.5, -0.4]]"
+      footprint: "[[0.46, 0.19], [0.41, 0.35], [-0.41, 0.35], [-0.46, 0.19], [-0.46, -0.19], [-0.41, -0.35], [0.41, -0.35], [0.46, -0.19]]"
       footprint_padding: 0.02
 
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
-        footprint_clearing_enabled: true
         enabled: true
         observation_sources: scan
         scan:
           topic: "__ROBONIX_SCAN_TOPIC__"
-          sensor_frame: velodyne
           max_obstacle_height: 2.0
           marking: true
           clearing: true
-          obstacle_range: 5.0
-          raytrace_range: 6.0
+          obstacle_range: 3.5
+          raytrace_range: 4.5
           qos:
             reliability: best_effort
             durability: volatile
@@ -148,8 +162,8 @@ local_costmap:
         enabled: true
         # Must be >= inscribed_radius of the octagonal footprint (~0.25m).
         # 0.30m gives a safety margin over the 0.224m minimum edge distance.
-        inflation_radius: 0.35
-        cost_scaling_factor: 2.5
+        inflation_radius: 0.55
+        cost_scaling_factor: 7.0
 
 
 global_costmap:
@@ -159,17 +173,15 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       # Same octagonal footprint as local_costmap (chassis + wheels).
-      footprint: "[[0.5, 0.4], [-0.5, 0.4], [-0.5, -0.4], [0.5, -0.4]]"
+      footprint: "[[0.46, 0.19], [0.41, 0.35], [-0.41, 0.35], [-0.46, 0.19], [-0.46, -0.19], [-0.41, -0.35], [0.41, -0.35], [0.46, -0.19]]"
       footprint_padding: 0.05
-      update_frequency: 10.0
-      publish_frequency: 10.0
+      update_frequency: 1.0
+      publish_frequency: 1.0
       resolution: 0.05
       rolling_window: false
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "denoise_layer", "inflation_layer"]
-      denoise_layer:
-        plugin: "nav2_costmap_2d::DenoiseLayer"
-        enabled: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_topic: "__ROBONIX_MAP_TOPIC__"
@@ -178,23 +190,21 @@ global_costmap:
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
-        footprint_clearing_enabled: true
         enabled: true
         observation_sources: scan
         scan:
           topic: "__ROBONIX_SCAN_TOPIC__"
-          sensor_frame: velodyne
           max_obstacle_height: 2.0
           marking: true
           clearing: true
           obstacle_range: 5.0
-          raytrace_range: 8.0
+          raytrace_range: 6.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.35
-        cost_scaling_factor: 2.5
+        inflation_radius: 0.80
+        cost_scaling_factor: 3.0
       always_send_full_costmap: true
 
 

@@ -1,0 +1,11 @@
+# robonix/skill/patrol/patrol/status — poll a patrol task's progress.
+# Empty run_id means "the most recent task".
+string run_id
+---
+bool known                  # false if no task with that id
+string state                # PENDING | RUNNING | SUCCEEDED | FAILED | CANCELED
+int32 total_waypoints       # total number of waypoints in this patrol
+int32 completed_waypoints   # waypoints visited and photographed so far
+int32 current_waypoint      # index of current target waypoint (-1 if not started)
+string current_photo_path   # path to the most recently saved photo
+string detail               # human-readable

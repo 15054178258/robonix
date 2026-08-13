@@ -1,0 +1,15 @@
+# robonix/skill/move/move — simple movement command.
+# Accepts direction (forward/backward/rotate_ccw/rotate_cw/stop) and
+# distance (meters) or angle (degrees). Uses odom closed-loop control.
+[contract]
+id      = "robonix/skill/move/move"
+version = "1"
+kind    = "skill"
+idl     = "move/srv/Move.srv"
+description = "Execute base movement: forward/backward/rotate with odom feedback. Params: direction, value (metres/degrees), speed (optional)."
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

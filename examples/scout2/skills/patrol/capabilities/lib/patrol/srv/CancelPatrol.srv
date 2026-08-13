@@ -1,0 +1,6 @@
+# robonix/skill/patrol/patrol/cancel — abort the currently running patrol.
+# Empty run_id = cancel whatever's active. Idempotent.
+string run_id
+---
+bool ok
+string message

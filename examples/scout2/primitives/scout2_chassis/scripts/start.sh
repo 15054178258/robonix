@@ -13,7 +13,7 @@ BOOT="$(cd "$(dirname "$0")" && pwd)/bootstrap.py"
 
 # Conda executable — common paths on this machine
 CONDA=""
-for candidate in /opt/conda/bin/conda /opt/miniconda3/bin/conda /home/szh/miniforge3/bin/conda; do
+for candidate in /opt/conda/bin/conda /opt/miniconda3/bin/conda /home/user/miniforge3/bin/conda; do
   [ -x "$candidate" ] && CONDA="$candidate" && break
 done
 if [ -z "${CONDA:-}" ]; then
@@ -22,9 +22,9 @@ if [ -z "${CONDA:-}" ]; then
 fi
 
 # Get Python binary from conda env
-CONDA_PY="$("$CONDA" run -n scout2-py python3 -c 'import sys; print(sys.executable)' 2>/dev/null)"
+CONDA_PY="$("$CONDA" run -n robonix-scout2 python3 -c 'import sys; print(sys.executable)' 2>/dev/null)"
 if [ -z "${CONDA_PY:-}" ]; then
-  echo "[scout2-chassis] error: failed to get Python from conda env 'scout2-py'."
+  echo "[scout2-chassis] error: failed to get Python from conda env 'robonix-scout2'."
   exit 1
 fi
 

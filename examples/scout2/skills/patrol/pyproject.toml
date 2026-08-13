@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "patrol_skill"
+version = "0.1.0"
+description = "Multi-waypoint patrol skill with nav2 navigation and photo capture"
+license = {text = "MulanPSL-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "robonix-api",
+    "rclpy",
+    "geometry-msgs",
+    "nav-msgs",
+    "sensor-msgs",
+    "fastmcp",
+    "Pillow",
+    "numpy",
+]
+
+[tool.setuptools.packages.find]
+include = ["patrol_skill*"]
