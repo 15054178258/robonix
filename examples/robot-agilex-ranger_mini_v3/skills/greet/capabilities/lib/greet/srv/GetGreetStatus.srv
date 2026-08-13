@@ -1,0 +1,8 @@
+# robonix/skill/greet/greet/status — poll the greeting watch.
+# Empty run_id = most recent. A persistent watch reports SUCCEEDED once the
+# loop is up (the "start" intent is done); the loop keeps running until cancel.
+string run_id
+---
+bool known
+string state                # canonical: PENDING/RUNNING/SUCCEEDED/CANCELED/FAILED
+string detail

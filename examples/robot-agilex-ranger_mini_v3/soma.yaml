@@ -1,0 +1,187 @@
+# Soma body description for the Ranger Mini v3 + Piper deploy.
+#
+# Soma v2 serves this YAML and the referenced URDF as raw text. Keep this file
+# aligned with system/soma/README.md: robot-level exports plus hierarchical
+# robot.components. The active URDF remains the Ranger Mini URDF; the Piper arm
+# is represented semantically here, while roboarm_ik uses its own Piper URDF for
+# IK and grasp execution.
+
+urdf:
+  path: ./urdf/ranger_mini.urdf
+  root_link: base_link
+  model_name: ranger_mini_v3_piper
+
+robot:
+  id: ranger_mini_01
+  display_name: "AgileX Ranger Mini v3 with Piper arm, MID-360, front Gemini 336L, and wrist Orbbec DC1"
+  family: mobile_manipulator
+  root_part: base
+  dimensions: { length_m: 0.74, width_m: 0.50, height_m: 1.05 }
+  # Collision hull of the mobile base in base_link, not the optional arm.
+  # The points are the declared 0.74 x 0.50 m base envelope and are consumed
+  # through robonix/system/soma/footprint by navigation.
+  footprint:
+    base_frame: base_link
+    points:
+      - [0.37, 0.25]
+      - [0.37, -0.25]
+      - [-0.37, -0.25]
+      - [-0.37, 0.25]
+  mass_kg: 67.2
+  passable_door_width_m: 0.65
+
+  exports:
+    - provider_id: robot_description
+      capabilities:
+        - { path: robonix/primitive/robot_description/driver, description: "Publish the Soma-owned URDF as /robot_description and TF." }
+    - provider_id: mapping
+      capabilities:
+        - { path: robonix/service/map/occupancy_grid, description: "Provide the live 2D occupancy grid." }
+        - { path: robonix/service/map/pointcloud, description: "Provide the fused 3D map point cloud." }
+        - { path: robonix/service/map/pose, description: "Provide the robot pose in the map frame." }
+        - { path: robonix/service/map/odom, description: "Provide map-aware odometry." }
+    - provider_id: nav2
+      capabilities:
+        - { path: robonix/service/navigation/navigate, description: "Navigate to a 2D goal pose." }
+    - provider_id: scene
+      capabilities:
+        - { path: robonix/system/scene/list_objects, description: "List current semantic scene objects." }
+        - { path: robonix/system/scene/goal_near, description: "Find a reachable navigation goal near an object." }
+    - provider_id: explore
+      capabilities:
+        - { path: robonix/skill/explore/explore, description: "Run frontier exploration." }
+    - provider_id: pick
+      capabilities:
+        - { path: robonix/skill/pick/pick, description: "Pick a named table-top object with the Piper arm." }
+    - provider_id: memory
+      capabilities:
+        - { path: robonix/service/memory/search, description: "Search robot memory." }
+    - provider_id: speech
+      capabilities:
+        - { path: robonix/service/speech/listen, description: "Listen through the configured speech backend." }
+        - { path: robonix/service/speech/speak, description: "Speak through the configured audio output." }
+    - provider_id: voiceprint
+      capabilities:
+        - { path: robonix/service/voiceprint/identify, description: "Identify enrolled speakers." }
+
+  components:
+    - id: base
+      type: mobile_base
+      urdf_link: base_link
+      exports:
+        - provider_id: ranger_chassis
+          capabilities:
+            - { path: robonix/primitive/chassis/move, description: "Command Ranger chassis motion." }
+            - { path: robonix/primitive/chassis/odom, description: "Read Ranger chassis odometry." }
+      components:
+        - id: lidar_top
+          type: lidar_3d
+          urdf_link: livox_frame
+          exports:
+            - provider_id: mid360_lidar
+              capabilities:
+                - { path: robonix/primitive/lidar/lidar3d, description: "Stream MID-360 3D point clouds." }
+
+        - id: imu_top
+          type: imu
+          urdf_link: livox_frame
+          exports:
+            - provider_id: mid360_imu
+              capabilities:
+                - { path: robonix/primitive/imu/imu, description: "Stream the MID-360 IMU." }
+
+        - id: front_rgbd
+          type: rgbd_camera
+          urdf_link: camera_gemini330_link
+          exports:
+            - provider_id: orbbec_camera
+              capabilities:
+                - { path: robonix/primitive/camera/rgb, description: "Stream front Gemini 336L RGB images for Scene, Mapping, and Greet." }
+                - { path: robonix/primitive/camera/depth, description: "Stream front Gemini 336L aligned depth images." }
+                - { path: robonix/primitive/camera/intrinsics, description: "Publish front Gemini color camera intrinsics." }
+                - { path: robonix/primitive/camera/extrinsics, description: "Publish front Gemini mount extrinsics when available." }
+                - { path: robonix/primitive/camera/snapshot, description: "Capture a front Gemini RGB snapshot." }
+                - { path: robonix/primitive/camera/depth_snapshot, description: "Capture a front Gemini depth snapshot." }
+
+        - id: onboard_audio
+          type: audio_io
+          exports:
+            - provider_id: audio_driver
+              capabilities:
+                - { path: robonix/primitive/audio/mic, description: "Capture onboard microphone audio." }
+                - { path: robonix/primitive/audio/speaker, description: "Play audio through the onboard speaker." }
+            - provider_id: audio_client_bridge
+              capabilities:
+                - { path: robonix/primitive/audio/mic, description: "Receive client-side microphone audio over the bridge." }
+                - { path: robonix/primitive/audio/speaker, description: "Send speech audio to the client bridge." }
+
+        - id: arm
+          type: manipulator
+          exports:
+            - provider_id: piper_ctl
+              capabilities:
+                - { path: robonix/primitive/arm/joint_states, description: "Read Piper joint states." }
+                - { path: robonix/primitive/arm/arm_status, description: "Read Piper arm status." }
+                - { path: robonix/primitive/arm/end_pose, description: "Read Piper end-effector pose." }
+                - { path: robonix/primitive/arm/pos_cmd, description: "Command Piper joint and gripper positions." }
+            - provider_id: roboarm_ik
+              capabilities:
+                - { path: robonix/service/manipulation/execute_grasp, description: "Execute a Piper grasp pose using local IK." }
+                - { path: robonix/service/manipulation/reset, description: "Park or reset the Piper arm." }
+          components:
+            - id: gripper
+              type: parallel_jaw_gripper
+              state:
+                joint_name: gripper
+                # Piper reports about 0.079 m at the commanded 0.080 m
+                # fully-open pose. Treat that calibrated range as empty/open.
+                open_position_m: 0.080
+                open_tolerance_m: 0.003
+              exports:
+                - provider_id: piper_ctl
+                  capabilities:
+                    - { path: robonix/primitive/arm/pos_cmd, description: "Command the Piper gripper through the arm command topic." }
+
+            - id: wrist_camera
+              type: rgbd_camera
+              exports:
+                - provider_id: orbbec_wrist_camera
+                  capabilities:
+                    - { path: robonix/primitive/camera/rgb, description: "Stream wrist Orbbec DC1 RGB images for Piper object detection." }
+                    - { path: robonix/primitive/camera/depth, description: "Stream wrist Orbbec DC1 depth images when enabled." }
+                    - { path: robonix/primitive/camera/camera_info, description: "Publish wrist Orbbec DC1 color camera intrinsics." }
+                - provider_id: llm_detect
+                  capabilities:
+                    - { path: robonix/service/perception/object_detect/detect_object, description: "Detect named objects in the wrist camera image." }
+                - provider_id: grasp_pose
+                  capabilities:
+                    - { path: robonix/service/perception/grasp_pose/grasp_request, description: "Convert a 2D detection into a fixed-height vertical grasp pose." }
+
+description:
+  summary: >-
+    Indoor mobile manipulator based on an AgileX Ranger Mini v3. The base uses
+    MID-360 LiDAR, a front Gemini 336L RGB-D camera, rtabmap, and nav2 for
+    mapping and navigation. A Piper arm with a separate Orbbec DC1 wrist camera
+    provides a vertical top-down pick pipeline: llm_detect detects a named
+    object in wrist RGB, grasp_pose maps the bbox center through a 2D
+    homography, and roboarm_ik executes the grasp through piper_ctl.
+  can_do:
+    - "Drive on flat indoor floors and gentle ramps."
+    - "Build and maintain a map with rtabmap."
+    - "Navigate to 2D goal poses with nav2."
+    - "Use the front Gemini 336L RGB-D camera for mapping and scene understanding."
+    - "Use the separate Orbbec DC1 wrist camera for named-object detection during pick."
+    - "Pick table-top objects with fixed-height vertical top-down grasps."
+    - "Run frontier exploration."
+  cannot_do:
+    - "Publish the Piper arm in the global Ranger URDF/TF tree in this minimal merge."
+    - "Infer grasp height from wrist depth; grasp z comes from default_desktop_height."
+    - "Execute arbitrary 6-DoF grasps; the current pick pipeline is vertical top-down only."
+    - "Use rear-facing vision; the Gemini is front-facing and the DC1 is wrist-mounted."
+    - "Climb stairs or tall curbs."
+  notes:
+    - "mapping and scene pin the front Gemini provider to orbbec_camera."
+    - "llm_detect pins the wrist DC1 provider to orbbec_wrist_camera."
+    - "piper_description is intentionally not started because its unprefixed base_link conflicts with the Ranger base_link."
+    - "Piper CAN must already be up as can_piper because piper_ctl.auto_can_setup is false."
+    - "grasp_pose loads rbnx-boot/hand-eye-data/2d_homography.npy and uses default_desktop_height as the final grasp z in arm/base_link."

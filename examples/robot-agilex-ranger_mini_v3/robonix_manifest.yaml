@@ -1,0 +1,294 @@
+manifestVersion: 1
+name: robonix-ranger-mini-v3-deploy
+
+catalog:
+  name: robonix.robot.agilex.ranger_mini_v3
+  version: 0.2.0
+  description: Robonix deployment for the AgileX Ranger Mini v3 robot.
+  license: Apache-2.0
+  tags: [robot, deploy, agilex, ranger_mini_v3, jetson, lidar, rgbd, scene, mapping, navigation]
+  maintainers:
+    - wheatfox <wheatfox17@icloud.com>
+
+env:
+  # Single-host ROS 2 transport. scripts/start.sh owns the local rmw_zenohd;
+  # native packages inherit the standard ROS 2 selector from rbnx boot.
+  ROS_DOMAIN_ID: "0"
+  RMW_IMPLEMENTATION: rmw_zenoh_cpp
+
+  MAPPING_MAPS_DIR: ${HOME}/.robonix/maps
+  SCENE_OBJECT_MEMORY_DB: ${HOME}/.robonix/scene/objects.db
+  SCENE_GRAPH_CACHE_DIR: ${HOME}/.robonix/scene/graph
+  SCENE_ANNOTATIONS_DIR: ${HOME}/.robonix/scene/annotations
+
+  # Build-time mirrors only. All model weights are prepared by build scripts;
+  # start must not download models.
+  HF_ENDPOINT: https://hf-mirror.com
+  PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
+
+  # Cloud speech requires no local ASR/TTS models or GPU runtime. SecretId and
+  # SecretKey are supplied only through the operator environment.
+  SPEECH_BACKEND: tencent
+
+system:
+  atlas:
+    listen: 0.0.0.0:50051
+  executor:
+    listen: 0.0.0.0:50061
+  pilot:
+    listen: 127.0.0.1:50071
+    vlm:
+      upstream: ${VLM_BASE_URL}
+      api_key: ${VLM_API_KEY}
+      model: ${VLM_MODEL}
+      api_format: openai
+  liaison:
+    listen: 0.0.0.0:50081
+  soma:
+    listen: 127.0.0.1:50091
+    robot_yaml: ${ROBONIX_DEPLOY_DIR}/soma.yaml
+  vitals:
+    # Vitals consumes Soma's body-health stream and aggregates Robonix module
+    # health. Bind externally so trusted operator clients can read dashboards.
+    listen: 0.0.0.0:50093
+  scene:
+    manifest: package_manifest.jetson-native.yaml
+    camera_provider_id: orbbec_camera
+    web_port: 50107
+
+primitive:
+  # Publishes the Soma-owned URDF as /robot_description and the standard TF
+  # tree. This has no body config of its own; Soma is the only URDF source.
+  - name: robot_description
+    url: https://github.com/syswonder/primitive-robot-description-rbnx
+    branch: main
+    manifest: package_manifest.native.yaml
+
+  # Keep providers before consumers: the lidar process also publishes the
+  # MID-360 IMU stream consumed by the next package.
+  - name: mid360_lidar
+    url: https://github.com/syswonder/primitive-livox-mid360-lidar-rbnx
+    branch: main
+    config:
+      lidar_ip: 192.168.1.161
+      host_ip: 192.168.1.50
+      xfer_format: 0
+      # Three attempts including cleanup stay below Soma's 90 s INIT deadline.
+      sentinel_timeout_s: 20.0
+
+  - name: mid360_imu
+    url: https://github.com/syswonder/primitive-livox-mid360-imu-rbnx
+    branch: main
+    config:
+      sentinel_timeout_s: 45.0
+
+  # Intel RealSense D435i disabled after the front RGB-D sensor was replaced by
+  # an Orbbec Gemini 330-series camera.
+  # - name: realsense_camera
+  #   url: https://github.com/syswonder/primitive-intel-realsense_d435i-camera-rbnx
+  #   branch: main
+  #   config:
+  #     depth_profile: 640x480x30
+  #     enable_imu: false
+  #     sentinel_timeout_s: 45.0
+
+  # Front-facing Gemini 336L for Scene, Mapping, and Greet. Keep this provider
+  # id aligned with the no-arm profile; ROS names identify the physical model.
+  - name: orbbec_camera
+    url: https://github.com/syswonder/primitive-orbbec-camera
+    branch: main
+    config:
+      camera_name: camera_gemini330
+      camera_model: gemini330_series
+      serial_number: CPC85630010A
+      color_profile: 640x480x30
+      depth_profile: 640x480x30
+      depth_registration: true
+      enable_color: true
+      enable_depth: true
+      enable_point_cloud: false
+      enable_imu: false
+      base_frame: base_link
+      cam_frame: camera_gemini330_color_optical_frame
+      sentinel_timeout_s: 45.0
+
+  # Wrist-mounted Orbbec Dabai DC1 used only by the Piper grasp pipeline. Its
+  # provider id is intentionally distinct from the front Gemini provider.
+  - name: orbbec_wrist_camera
+    url: https://github.com/syswonder/primitive-orbbec-dabai_dcw-camera-rbnx
+    branch: main
+    config:
+      enable_depth: false
+      depth_registration: false
+      color_width: 1280
+      color_height: 720
+      color_format: YUYV
+
+  - name: ranger_chassis
+    url: https://github.com/syswonder/primitive-agilex-ranger_mini_v3-chassis-rbnx
+    branch: main
+    config:
+      port_name: can_ranger
+      publish_odom_tf: true
+
+  - name: piper_ctl
+    url: https://github.com/syswonder/primitive-agilex-piper-arm-rbnx
+    branch: main
+    config:
+      can_port: can_piper
+
+  # The robot's USB audio device. This is the default mic/speaker provider for
+  # onboard speech; client-side audio is a separate, session-bound path.
+  - name: audio_driver
+    url: https://github.com/syswonder/primitive-audio-driver-rbnx
+    branch: main
+    config:
+      mic_device: plughw:CARD=Plus,DEV=0
+      mic_sample_rate: 16000
+      speaker_device: plughw:CARD=Plus,DEV=0
+      speaker_sample_rate: 16000
+
+  # Client-side audio is a separate provider. The client discovers this
+  # listener through Atlas and connects outward, so deployment never stores a
+  # client address or a client-owned port. Speech/speak remains pinned to the
+  # robot USB provider unless a caller explicitly selects this provider.
+  - name: audio_client_bridge
+    url: https://github.com/syswonder/primitive-audio-client-bridge-rbnx
+    branch: main
+    config: {}
+
+service:
+  - name: memory
+    path: ${ROBONIX_SOURCE_PATH}/services/memsearch
+    config: {}
+
+  - name: speech
+    path: ${ROBONIX_SOURCE_PATH}/services/speech
+    config:
+      speech_backend: tencent
+      default_speaker_provider_id: audio_driver
+      tencent_asr_appid: ${TENCENT_ASR_APPID}
+      tencent_tts_voice_type: 502003
+
+  - name: voiceprint
+    path: ${ROBONIX_SOURCE_PATH}/services/voiceprint
+    config: {}
+
+  - name: llm_detect
+    url: https://github.com/syswonder/service-object-detect-rbnx
+    branch: main
+    config:
+      llm_base_url: ${VLM_BASE_URL}
+      llm_api_key: ${VLM_API_KEY}
+      llm_model: ${VLM_MODEL}
+      llm_timeout_s: 60.0
+      camera_provider_id: orbbec_wrist_camera
+      rotation_cam2arm: true
+      skip_depth: true
+
+  - name: grasp_pose
+    url: https://github.com/syswonder/service-grasp-pose-rbnx
+    branch: main
+    config:
+      # Robot-specific, versioned with this deploy. Recalibrate after changing
+      # the wrist camera mount or the arm-to-workspace geometry.
+      hand_eye_calibration_file: ${ROBONIX_DEPLOY_DIR}/config/calibration/2d_homography.npy
+      default_desktop_height: -0.21
+      catch_offset: 0.00
+
+  - name: roboarm_ik
+    url: https://github.com/syswonder/service-roboarm-ik-rbnx
+    branch: main
+    config:
+      # IK consumes the arm-only kinematic model versioned with this deployment.
+      urdf_path: ${ROBONIX_DEPLOY_DIR}/urdf/piper.urdf
+      init_joints_deg: [-1.837021, 93.526178, -36.180726, -5.065302, 17.399731, -0.323827]
+      # init_joints_deg: [0.023987, 72.176551, -59.083526, -3.669045, 59.316402, -2.063901]
+      teach_safe_joints_deg: [3.358211, 2.0, -2.0, -6.708426, 18.580102, 5.898858]
+      # put_down first carries the object here, opens the gripper, then returns
+      # to teach_safe_joints_deg. Units are degrees for joint1..joint6.
+      put_down_joints_deg: [2.990407, 166.783154, -70.978190, -4.119805, 1.697096, 10.370476]
+      reach_threshold_deg: 0.3
+      reset_feedback_timeout_s: 8.0
+      reset_post_reach_wait_s: 1.0
+      carry_to_teach_safe_waypoints_deg:
+        - [1.711088, 81.721467, -80.833939, -3.718019, 49.375697, -6.657454]
+      max_gripper_width: 0.08
+
+  - name: mapping
+    url: https://github.com/syswonder/service-map-rbnx
+    branch: main
+    manifest: package_manifest.jetson-native.yaml
+    config:
+      webui_port: 8091
+      # Production localization uses chassis odometry. The timestamped Mid360
+      # cloud is deskewed against odom before RTAB-Map consumes it.
+      # Use RGB for visual constraints and fuse depth with Mid360 occupancy.
+      # Camera data stays inside RTAB-Map; Nav2 LaserScan remains lidar-only.
+      # Use the chassis odom until a separately declared Mid360 LIO provider
+      # passes the static-drift gate. RTAB-Map still fuses RGB-D and Mid360.
+      deskew_lidar: true
+      # Fuse the front Gemini depth projection with Mid360 in the 2D occupancy
+      # grid. Nav2's LaserScan input remains lidar-only.
+      occupancy_sources: [lidar, depth]
+      params_file: config/rtabmap_params.yaml
+      sensor_providers:
+        lidar3d: mid360_lidar
+        odom: ranger_chassis
+        rgb: orbbec_camera
+        depth: orbbec_camera
+
+  - name: nav2
+    url: https://github.com/syswonder/service-navigation-rbnx
+    branch: main
+    manifest: package_manifest.jetson-native.yaml
+    config:
+      params_file: config/nav2_params.yaml
+      bt_xml_file: config/navigate.xml
+      dynamic_speed:
+        # Match the effective DWB planar ceiling from max_vel_x/max_speed_xy.
+        # The 75% startup limit is 0.225 m/s.
+        max_linear_speed_mps: 0.3
+        default_percentage: 75
+        step_percentage: 20
+        min_percentage: 20
+      scan_projection:
+        enabled: true
+        min_height_m: 0.30
+        max_height_m: 1.40
+        range_max_m: 12.0
+        self_filter_margin_m: 0.05
+      action_wait_s: 90.0
+      provider_ids:
+        map: mapping
+        # Canonical odom owner. Replace with a declared Mid360 LIO provider
+        # only after that provider exists and passes the static-drift gate.
+        odom: ranger_chassis
+        scan_cloud: mid360_lidar
+
+skill:
+  - name: explore
+    url: https://github.com/syswonder/skill-explore-rbnx
+    branch: main
+    config: {}
+
+  # Long-lived passerby greeting watch. Its Qwen3 VLM configuration is
+  # independent from Pilot, and the skill never commands robot motion.
+  - name: greet
+    path: ./skills/greet
+    config:
+      # Bind the front Gemini explicitly; the wrist DC1 exposes the same
+      # camera/rgb contract under the distinct orbbec_wrist_camera provider.
+      camera_provider_id: orbbec_camera
+      soma_provider_id: soma
+      chassis_provider_id: ranger_chassis
+      vlm:
+        upstream: ${GREET_VLM_BASE_URL}
+        api_key: ${GREET_VLM_API_KEY}
+        model: ${GREET_VLM_MODEL}
+
+  - name: pick
+    url: https://github.com/syswonder/skill-pick-vertical-grasp-rbnx
+    branch: main
+    config:
+      park_at_teach_safe_after_pick: true

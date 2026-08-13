@@ -1,0 +1,12 @@
+# robonix/skill/greet/greet/status — poll the greeting watch.
+[contract]
+id      = "robonix/skill/greet/greet/status"
+version = "1"
+kind    = "skill"
+idl     = "greet/srv/GetGreetStatus.srv"
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

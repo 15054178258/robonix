@@ -1,0 +1,15 @@
+# robonix/skill/greet/greet — start the passerby-greeting watch.
+# User-invocable: the skill watches the front RGB camera, detects people
+# locally with YOLO, and on a positive asks a VLM for one friendly line
+# asking folks to make way, spoken via speech/speak. Returns immediately.
+[contract]
+id      = "robonix/skill/greet/greet"
+version = "1"
+kind    = "skill"
+idl     = "greet/srv/Greet.srv"
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

@@ -1,0 +1,15 @@
+rbnx-build/
+rbnx-boot/
+.env
+.run/
+logs/
+.vscode/
+.idea/
+*.swp
+__pycache__/
+logs_history
+.venv/
+current_map_pose.json
+**/weights/*.pt
+
+./*.json

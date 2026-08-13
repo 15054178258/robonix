@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ranger Mini v2 + MID-360 + RealSense D435i URDF for soma.
+
+  Origin: chassis links (base_link + 4 wheel links) come from
+  old_cap/ranger_description/src/ranger_description/urdf/ranger_mini.urdf
+  (SolidWorks-exported, mesh-referenced).
+
+  Sensor mount edges (livox_frame, camera_435i_link) appended below;
+  values match the static_transform_publisher defaults shipped in
+  packages/ranger_description_rbnx/launch/static_tf.launch.xml so that
+  the deploy has a single source of truth: when soma's
+  sensor_extrinsics srv ships and consumers switch over (Stage B),
+  ranger_description retires and this URDF becomes canonical.
+
+  IMPORTANT — frame name compatibility:
+    * livox_frame      — MID-360 driver hard-codes this frame_id when
+                         publishing PointCloud2. Do NOT rename.
+    * camera_435i_link — realsense2_camera builds child frame names as
+                         "<camera_name>_<base_frame_id>"; the deploy
+                         sets camera_name=camera_435i, so the body
+                         frame is camera_435i_link (NOT camera_link).
+                         realsense2_camera owns everything beneath this
+                         link (color/depth/IR optical frames, IMU
+                         frames). We only own the chassis→camera-body
+                         edge.
+
+  Mesh paths use package://ranger_description/meshes/*.STL — soma v0.1
+  does not parse meshes, only returns the URDF XML as a string. mesh
+  files are NOT shipped with this deploy. When stage B's footprint srv
+  needs mesh hulls, mesh path resolution will be revisited.
+-->
+<robot name="ranger_mini_v2">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.0242698272228022 -0.0030308024613212 0.0544267444673498" rpy="0 0 0"/>
+      <mass value="0.162715996120322"/>
+      <inertia
+        ixx="0.000723700192916944" ixy="-1.55745142682799E-08" ixz="-3.42378773027466E-12"
+        iyy="0.000744046536331603" iyz="2.24935144207573E-07"
+        izz="2.14412578189702E-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/base_link.STL"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/base_link.STL"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="fr_Link">
+    <inertial>
+      <origin xyz="1.8493E-05 1.2713E-06 0.043679" rpy="0 0 0"/>
+      <mass value="2.2786"/>
+      <inertia
+        ixx="0.0063625" ixy="-1.0581E-07" ixz="-4.0831E-07"
+        iyy="0.006363"  iyz="-3.4944E-08"
+        izz="0.010465"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/fr_Link.STL"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/fr_Link.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="rl_joint" type="continuous">
+    <origin xyz="0.2195 -0.015804 0.11898" rpy="0 0.006858 0"/>
+    <parent link="base_link"/>
+    <child  link="fr_Link"/>
+    <axis   xyz="0 0 -1"/>
+  </joint>
+
+  <link name="fl_Link">
+    <inertial>
+      <origin xyz="-0.0017956 -9.6304E-08 0.043642" rpy="0 0 0"/>
+      <mass value="2.2786"/>
+      <inertia
+        ixx="0.0063695" ixy="-2.1067E-08" ixz="-0.00016867"
+        iyy="0.006363"  iyz="-1.0301E-08"
+        izz="0.010458"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/fl_Link.STL"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/fl_Link.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="fl_joint" type="continuous">
+    <origin xyz="0.22145 -0.015803 -0.16276" rpy="3.1416 0 0"/>
+    <parent link="base_link"/>
+    <child  link="fl_Link"/>
+    <axis   xyz="0.041054 0 -0.99916"/>
+  </joint>
+
+  <link name="br_Link">
+    <inertial>
+      <origin xyz="-0.00017093 6.1255E-08 0.043678" rpy="0 0 0"/>
+      <mass value="2.2786"/>
+      <inertia
+        ixx="0.0063627" ixy="-2.1069E-08" ixz="-1.587E-05"
+        iyy="0.006363"  iyz="9.3201E-09"
+        izz="0.010465"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/br_Link.STL"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/br_Link.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="br_joint" type="continuous">
+    <origin xyz="-0.27015 -0.015803 0.12117" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="br_Link"/>
+    <axis   xyz="0.0039668 0 -0.99999"/>
+  </joint>
+
+  <link name="bl_Link">
+    <inertial>
+      <origin xyz="-0.0011575 -4.8644E-06 0.043663" rpy="0 0 0"/>
+      <mass value="2.2786"/>
+      <inertia
+        ixx="0.0063656" ixy="-8.1498E-08" ixz="-0.00011049"
+        iyy="0.006363"  iyz="6.6847E-08"
+        izz="0.010462"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/bl_Link.STL"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ranger_description/meshes/bl_Link.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="bl_joint" type="continuous">
+    <origin xyz="-0.26982 -0.01581 -0.16063" rpy="-3.1405 -0.014946 0.086503"/>
+    <parent link="base_link"/>
+    <child  link="bl_Link"/>
+    <axis   xyz="0.027043 0 -0.99963"/>
+  </joint>
+
+  <!-- =============================================================
+       Sensor mounts (CAD placeholders — refine after measurement)
+
+       Values mirror packages/ranger_description_rbnx/launch/static_tf.launch.xml
+       defaults so the static_transform_publisher tree and this URDF
+       agree byte-for-byte. When sensor_extrinsics srv ships (Stage B),
+       static_transform_publisher retires and this URDF becomes the
+       only source.
+
+       IMU note: MID-360 publishes IMU under frame_id=livox_frame
+       (shared with the lidar). RealSense D435i's IMU is intentionally
+       disabled in the deploy (enable_imu=false). So no separate IMU
+       link is needed here — mid360_imu_rbnx is a pure topic shim.
+       ============================================================= -->
+
+  <!-- ── Livox MID-360 LiDAR ─────────────────────────────────────── -->
+  <link name="livox_frame"/>
+  <joint name="base_to_livox" type="fixed">
+    <origin xyz="0.18 0 0.425" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="livox_frame"/>
+  </joint>
+
+  <!-- ── Intel RealSense D435i body mount ────────────────────────── -->
+  <!-- realsense2_camera spawns child frames (camera_435i_color_optical_frame
+       etc.) automatically off camera_435i_link. We own only the
+       chassis → camera-body edge. -->
+  <link name="camera_435i_link"/>
+  <joint name="base_to_camera_435i" type="fixed">
+    <origin xyz="0.28 0 0.30" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="camera_435i_link"/>
+  </joint>
+
+  <!-- Orbbec Gemini 330-series front camera used by the no-arm profile.
+       The Orbbec driver owns the camera_gemini330_* child frames. -->
+  <link name="camera_gemini330_link"/>
+  <joint name="base_to_camera_gemini330" type="fixed">
+    <origin xyz="0.28 0 0.30" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="camera_gemini330_link"/>
+  </joint>
+</robot>

@@ -1,0 +1,26 @@
+# greet_rbnx — passerby-greeting skill (native; uses the host's CUDA torch
+# for YOLO). kind: skill (user-invocable). robonix/skill/greet/greet() starts
+# the watch; greet/cancel stops it. Pipeline: front camera/rgb → local YOLO
+# person detector → (only on a hit) VLM make-way line → speech/speak. The
+# robot base is never driven.
+manifestVersion: 1
+
+package:
+  name: com.robonix.skill.greet
+  version: 0.1.0
+  vendor: robonix
+  description: Passerby-greeting skill (camera + YOLO + VLM + speech).
+  license: MulanPSL-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+capabilities:
+  - name: robonix/skill/greet/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/greet/greet
+    path: capabilities/greet.v1.toml
+  - name: robonix/skill/greet/greet/status
+    path: capabilities/status.v1.toml
+  - name: robonix/skill/greet/greet/cancel
+    path: capabilities/cancel.v1.toml

@@ -1,0 +1,5 @@
+# robonix/skill/greet/greet/cancel — stop the greeting watch. Idempotent.
+string run_id               # empty = cancel the active watch
+---
+bool ok
+string message

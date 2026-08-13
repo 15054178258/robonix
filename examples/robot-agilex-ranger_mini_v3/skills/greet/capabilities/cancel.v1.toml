@@ -1,0 +1,12 @@
+# robonix/skill/greet/greet/cancel — stop the greeting watch. Idempotent.
+[contract]
+id      = "robonix/skill/greet/greet/cancel"
+version = "1"
+kind    = "skill"
+idl     = "greet/srv/CancelGreet.srv"
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

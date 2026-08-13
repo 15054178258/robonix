@@ -1,0 +1,12 @@
+# Lifecycle interface for the greet skill. rbnx boot calls
+# Driver(CMD_INIT, config_json) here after the process registers with atlas;
+# the on_init/on_activate handlers in greet_skill.atlas_bridge then resolve
+# camera/rgb + speech/speak and start the greeting loop.
+[contract]
+id      = "robonix/skill/greet/driver"
+version = "1"
+kind    = "skill"
+idl     = "lifecycle/srv/Driver.srv"
+
+[mode]
+type = "rpc"

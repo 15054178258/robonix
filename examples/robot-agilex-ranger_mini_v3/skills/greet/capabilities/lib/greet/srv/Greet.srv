@@ -1,0 +1,7 @@
+# robonix/skill/greet/greet — start the passerby-greeting watch (async).
+# Returns immediately with a run_id; poll greet/status, stop via greet/cancel.
+float32 duration_s          # 0 = run until cancelled
+---
+bool accepted               # false if it couldn't start
+string run_id               # handle for status/cancel; empty when accepted=false
+string message
