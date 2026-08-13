@@ -1,0 +1,17 @@
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.robot_description
+  version: 0.1.0
+  description: Publishes the Soma-owned URDF as the standard ROS 2 robot TF tree.
+  tags: [primitive, robot-description, urdf, tf, ros2, zenoh, native]
+  maintainers: [wheatfox <wheatfox17@icloud.com>]
+  license: MulanPSL-2.0
+
+build: ROBONIX_ROBOT_DESCRIPTION_MODE=native bash scripts/build.sh
+start: ROBONIX_ROBOT_DESCRIPTION_MODE=native bash scripts/start.sh
+stop: bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/primitive/robot_description/driver
+
