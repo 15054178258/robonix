@@ -1,0 +1,22 @@
+# Copy this file into the robot deployment repository. The Mapping service does
+# not load this template at runtime; set config.params_file to the copied path.
+RGBD/CreateOccupancyGrid: true
+Grid/RangeMax: 6.0
+Grid/CellSize: 0.05
+Grid/RayTracing: true
+Grid/3D: false
+Grid/NormalsSegmentation: false
+Grid/MaxObstacleHeight: 1.0
+Grid/MaxGroundHeight: 0.1
+Reg/Strategy: 1
+Reg/Force3DoF: true
+Optimizer/Strategy: 1
+RGBD/NeighborLinkRefining: true
+RGBD/ProximityBySpace: true
+RGBD/AngularUpdate: 0.1
+RGBD/LinearUpdate: 0.1
+Vis/MinInliers: 12
+Rtabmap/DetectionRate: 1.0
+Icp/MaxCorrespondenceDistance: 0.2
+Icp/MaxTranslation: 0.5
+Icp/MaxRotation: 0.78

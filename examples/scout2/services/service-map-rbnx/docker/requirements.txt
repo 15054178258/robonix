@@ -1,0 +1,12 @@
+# Python deps for atlas_bridge (in-container).
+grpcio==1.80.0
+grpcio-tools==1.76.0
+protobuf==6.33.6
+numpy>=1.24.0
+pyyaml>=6.0
+# Pillow: save_map.py writes occupancy.png (offline preview) from the grid.
+# Without it the png is silently skipped (pgm/yaml still written).
+pillow>=10.0.0
+# mcp: the @mapping.mcp(...) decorators in atlas_bridge.py import
+# mcp.server.fastmcp.FastMCP once the map MCP contracts are present.
+mcp>=1.28.1

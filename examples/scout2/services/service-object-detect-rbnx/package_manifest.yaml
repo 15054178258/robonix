@@ -1,0 +1,50 @@
+# llm_detect_rbnx — LLM-based object detection service.
+#
+# Replaces yolo_world_rbnx (YOLOE/YOLO-World) with a VLM/LLM-based
+# object detection approach. Uses OpenAI-compatible vision API to detect
+# objects in camera frames. Owns `robonix/service/perception/object_detect/*`.
+#
+# Surface:
+#   * atlas-routed MCP    object_detect/detect_object  (Pilot / pick_skill view)
+#
+# Lifecycle:
+#   on_init      — parse config (LLM endpoint, model, prompts), resolve
+#                  atlas camera contracts, spawn rclpy thread.
+#   on_deactivate — stop rclpy thread.
+#
+# Capability surface (mode = abstract, transport = wire):
+#   service/perception/object_detect/driver         mode=rpc  transport=gRPC  Driver(INIT)
+#   service/perception/object_detect/detect_object  mode=rpc  transport=MCP   DetectObject.srv
+#
+# Config (passed via Driver(CMD_INIT, config_json)):
+#   llm_base_url         LLM API endpoint (OpenAI-compatible)
+#   llm_api_key          API key for the LLM service
+#   llm_model            Model name (e.g. google/gemini-3-pro-preview)
+#   temperature          Sampling temperature (default 0.0)
+#   rgb_topic            optional override; default = atlas-resolved or
+#                        /camera/color/image_raw
+#   depth_topic          optional override; default = atlas-resolved or
+#                        /camera/depth/image_raw
+#   camera_info_topic    optional override; default = atlas-resolved or
+#                        /camera/color/camera_info
+#   rotation_cam2arm     Whether camera is mounted opposite to arm (default false)
+#
+manifestVersion: 1
+
+package:
+  name: robonix.service.object_detect
+  version: 0.1.0
+  vendor: robonix
+  description: LLM-based object detection — atlas MCP service, drop-in replacement for yolo_world_rbnx.
+  license: MulanPSL-2.0
+  tags: [service, perception, object_detect, llm, vlm, ros2]
+  maintainers: ["lhw2002426 <lhw2002426@users.noreply.github.com>"]
+
+capability_id: llm_detect
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+capabilities:
+  - name: robonix/service/perception/object_detect/driver
+  - name: robonix/service/perception/object_detect/detect_object

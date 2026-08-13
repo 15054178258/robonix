@@ -1,0 +1,119 @@
+# mapping_rbnx — SLAM mapping service.
+#
+# Algo + sensor inputs are config-driven (RBNX_CONFIG_FILE → mapping.yaml-like
+# block from the deploy manifest). One package, multiple algorithms:
+#
+#   algo: rtabmap   — ROS2-native graph SLAM (apt-installable). Sensor
+#                     inputs are NOT hardcoded: deployment provider bindings
+#                     decide which sensor roles are wired in.
+#                     Examples:
+#                       simulator — lidar2d + RGB-D + odom providers
+#                       robot     — lidar3d + RGB-D + odom providers
+#                     The launch file branches on what's enabled
+#                     (`subscribe_scan` for 2D LaserScan,
+#                     `subscribe_scan_cloud` for 3D PointCloud2,
+#                     `subscribe_rgb`+`subscribe_depth` for RGBD).
+#   algo: dlio      — Direct LiDAR-Inertial Odometry. Pure 3D Livox +
+#                     IMU path. Needs slam_alt_ws colcon ws bind-mounted
+#                     at /ws/install.
+#   algo: fastlio2  — [BROKEN: drift] kept reachable for repro/debug
+#                     only. Needs FASTLIO2_ROS2 colcon build.
+#
+# slam_toolbox + cartographer were dropped after rtabmap consistently
+# beat them in head-to-head testing.
+#
+# Provider bindings drive both Atlas resolution and launch subscriptions.
+#
+# Outputs (FIXED capability surface — same set declared regardless
+# of which algo is selected; consumers care about contracts, not algos):
+#   robonix/service/map/occupancy_grid → nav_msgs/OccupancyGrid
+#   robonix/service/map/pointcloud     → sensor_msgs/PointCloud2
+#   robonix/service/map/pose           → geometry_msgs/PoseWithCovarianceStamped
+#                                        (SLAM-corrected, map frame, can
+#                                         jump on loop closure)
+#   robonix/service/map/odom           → nav_msgs/Odometry
+#                                        (SLAM-corrected, odom frame,
+#                                         continuous between closures)
+#   robonix/service/map/lifecycle      → map/msg/MapLifecycle
+#                                        ({map_id, mode, generation},
+#                                         latched; bridge-owned + algo-
+#                                         independent — published by
+#                                         atlas_bridge itself, not the
+#                                         SLAM engine)
+# Algos that don't natively publish a contract spawn an adapter node
+# in their launch file so the topic still exists at the bound name.
+manifestVersion: 1
+
+package:
+  name: robonix.service.mapping
+  version: 0.5.0
+  description: SLAM mapping service. Algo + sensor inputs config-driven.
+  tags: [service, mapping, slam, rtabmap, ros2]
+  maintainers: [wheatfox <wheatfox17@icloud.com>]
+  license: MulanPSL-2.0
+
+# Deployment target: x86_64 + docker (ROS2 in image). This is the default
+# manifest. Sibling manifests select other targets via the deploy entry's
+# `manifest:` field (rbnx loads that file instead of this one):
+#   package_manifest.jetson-docker.yaml   arm64 Jetson + docker (L4T base)
+#   package_manifest.jetson-native.yaml   arm64 Jetson + host ROS2 (no docker)
+# All three share this package's code + capabilities; only build/start differ.
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+# ── config (deploy `config:` block → Driver(CMD_INIT)) ──────────────────────
+# Required:
+#   sensor_providers: {sensor_role: provider_id} enables each Mapping input
+#                     and pins its Atlas provider
+# Optional:
+#   algo: rtabmap | dlio | fastlio2[broken] (default: rtabmap)
+#   occupancy_sources: [lidar|depth]  explicit 2D occupancy policy (optional;
+#                                      legacy deploys retain automatic choice)
+#   params_file: deploy-owned RTAB-Map YAML, relative to robot manifest
+#   rtabmap_params: optional final scalar overrides
+#   deskew_lidar: true requires a PointCloud2 per-point timestamp field. With
+#                        external odom it uses odom TF; otherwise ICP deskews.
+#   navigation_odom_bridge: false by default. When true, internal RTAB-Map
+#                        odometry uses a private odom_frame message without TF,
+#                        and mapping publishes map -> navigation_odom_frame by
+#                        combining RTAB-Map localization with a low-latency
+#                        chassis navigation_odom_topic. This mode requires no
+#                        sensor_providers.odom binding.
+#   navigation_odom_topic: chassis Odometry topic used only by the bridge
+#                        (default /odom; it is not an RTAB-Map sensor input).
+#   navigation_odom_frame: navigation-local frame (default odom). Must differ
+#                        from odom_frame when the bridge is enabled.
+# Frames / time (optional; defaults: base_link, odom, wall clock):
+#   base_frame, odom_frame, use_sim_time
+# Map persistence (optional; rtabmap only):
+#   map_id:    stable id for this map. Bind the SAME id in the scene service
+#              so its per-map_id semantic store anchors to this spatial map.
+#              Omit → ephemeral (db wiped each boot — the legacy behaviour).
+#   map_mode:  mapping (default; build/extend) | localization (load read-only,
+#              stable map frame across restarts — needs a saved map_id first).
+#   reset_map: true to start a named map fresh (mapping mode only).
+# Operator page (optional):
+#   webui_port: 0 disables it; any other port enables it.
+#   webui_host: bind host, default 127.0.0.1. This UI is unauthenticated.
+# Saved maps live under {MAPPING_MAPS_DIR}/{map_id}/ as rtabmap.db +
+# occupancy.pgm/.yaml/.png + cloud.pcd + meta.yaml (offline-previewable).
+
+# Only list what we actually declare on atlas at runtime. Aspirational
+# entries (status / save_map / load_map / switch_mode / set_initial_pose)
+# were removed — they shipped as "TODO" markers but boot ran fine without
+# them, so manifest claims and runtime behaviour drifted apart. The
+# moment any of those gRPC services is implemented, add it back AND
+# wire the DeclareInterface call in atlas_bridge.
+stop: bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/service/map/occupancy_grid
+  - name: robonix/service/map/pointcloud
+  - name: robonix/service/map/pose
+  - name: robonix/service/map/odom
+  - name: robonix/service/map/lifecycle
+  - name: robonix/service/map/save_map
+  - name: robonix/service/map/list_maps
+  - name: robonix/service/map/load_map
+  - name: robonix/service/map/pose_estimate
+  - name: robonix/service/map/switch_mode

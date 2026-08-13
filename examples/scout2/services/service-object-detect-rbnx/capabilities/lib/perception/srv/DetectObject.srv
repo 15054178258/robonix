@@ -1,0 +1,28 @@
+# Request: object name to detect
+string object_name
+
+---
+# Response: 2D bounding box in image coordinates
+# If detection fails, success will be false
+
+# 2D bounding box in pixel coordinates [x_min, y_min, x_max, y_max]
+float64[] bbox_2d
+
+# 3D center position of the object in camera frame [x, y, z] in meters
+float64[] object_center_3d
+
+# Detection confidence score
+float32 confidence
+
+# Coarse principal-axis orientation of the target in the RGB frame,
+# reported as one of the quantized labels: "vertical", "horizontal",
+# "diag_tlbr", "diag_trbl", "unknown". Consumers should treat any
+# unknown / empty value as "no confident direction" and fall back to
+# their default yaw estimation. See llm_detect.ORIENTATION_LABELS.
+string orientation
+
+# Success flag
+bool success
+
+# Status message
+string message

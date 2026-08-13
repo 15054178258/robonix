@@ -1,0 +1,16 @@
+# robonix/skill/explore/explore — autonomous environment exploration.
+# User-invocable atomic intent: "go survey the surroundings, build the
+# map, then come back". Internally orchestrates service/map/* (read)
+# + service/navigation/* (drive). Returns immediately with a task_id;
+# callers poll status / cancel via the sibling contracts.
+[contract]
+id      = "robonix/skill/explore/explore"
+version = "1"
+kind    = "skill"
+idl     = "explore/srv/Explore.srv"
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true

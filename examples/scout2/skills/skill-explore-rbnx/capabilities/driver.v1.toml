@@ -1,0 +1,15 @@
+# Lifecycle interface for the explore skill.
+# `rbnx boot` calls Driver(CMD_INIT, config_json) against this AFTER the
+# skill process has registered with atlas. The on_init handler in
+# explore_skill.atlas_bridge runs `resolve_inputs()` to bind the skill's
+# upstream contracts (map/occupancy_grid, navigation/navigate/status/cancel)
+# and constructs the ExploreController. Without this contract the
+# handler never fires and every MCP call returns "controller not initialized".
+[contract]
+id      = "robonix/skill/explore/driver"
+version = "1"
+kind    = "skill"
+idl     = "lifecycle/srv/Driver.srv"
+
+[mode]
+type = "rpc"

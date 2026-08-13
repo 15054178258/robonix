@@ -1,0 +1,12 @@
+# robonix/skill/explore/explore — start an autonomous exploration task.
+# The skill drives the robot through frontier-based exploration of the
+# surrounding environment until the area is "fully covered" (no more
+# significant frontiers) or the timeout is reached. Returns a run_id
+# immediately; use the status contract to poll progress.
+string area_hint            # free-form: "this room", "ground floor", ""
+float32 timeout_s           # hard ceiling; 0 = no timeout (let coverage decide)
+float32 max_speed_m_s       # cap forward speed during explore (safety)
+---
+bool accepted               # false if another task is already running
+string run_id               # uuid handle; empty when accepted=false. Pass to status/cancel.
+string message              # human-readable detail

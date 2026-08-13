@@ -1,0 +1,38 @@
+# Build artifacts
+rbnx-build/
+build/
+install/
+log/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+
+# Proto generated (should be regenerated via build)
+proto_gen/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Docker
+.docker/
+
+# Maps (binary data)
+maps/*.pcd
+maps/*.ply
+maps/*.pgm
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime map store (per-map_id: rtabmap.db + occupancy.* + cloud.pcd)
+/maps/

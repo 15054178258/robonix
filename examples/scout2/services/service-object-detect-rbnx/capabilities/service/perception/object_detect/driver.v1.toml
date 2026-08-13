@@ -1,0 +1,12 @@
+# Lifecycle interface every perception/object_detect service implementation
+# MUST declare. `rbnx boot` calls Driver(CMD_INIT, config_json) against this
+# AFTER all primitives have finished init (this service consumes
+# primitive/camera/{rgb,depth,camera_info}).
+[contract]
+id      = "robonix/service/perception/object_detect/driver"
+version = "1"
+kind    = "service"
+idl     = "lifecycle/srv/Driver.srv"
+
+[mode]
+type = "rpc"

@@ -1,0 +1,86 @@
+[prompts]
+# Single-target detection prompt: pick/yolo_grasp only need one bbox.
+#
+# The prompt asks the LLM to return, in addition to the tight bounding box,
+# a coarse 4-way orientation label describing the target's principal axis
+# (long axis for elongated objects, or the dominant "pointing" direction if
+# the object has a clear head/tail such as a handle, tip, opening, etc.).
+# The four categories intentionally quantize the full 180° range of
+# unsigned axis directions:
+#   - "vertical"   : long axis is roughly up-down       ( |   )
+#   - "horizontal" : long axis is roughly left-right    ( --- )
+#   - "diag_tlbr"  : long axis is roughly top-left to bottom-right   ( \ )
+#   - "diag_trbl"  : long axis is roughly top-right to bottom-left   ( / )
+# If the object is round / symmetric / has no discernible orientation,
+# return "unknown".
+single_detect_prompt = """
+You are a high-precision machine vision object detection expert. Analyze the given image and localize the requested target object.
+
+Primary target object: "{object_name}"
+
+Your task:
+1. Detect only the primary target object "{object_name}".
+2. If multiple matching objects are visible, choose the clearest and most graspable one.
+3. If the target is not visible, set "failed": true.
+4. If the target is visible, set "failed": false and return one tight bounding box that fully contains the target.
+5. Treat visually matching target instances as valid even if color/material differs from the canonical object name; for example, a green/unripe/toy banana-shaped object is still a valid "banana" target.
+6. Also estimate the target's coarse 2D orientation in the image and return it as a single label in "orientation". Use the object's principal/long axis (or, if the object has a clear pointing direction such as a handle, tip, spout, or opening, use that direction). Quantize to exactly one of these five labels:
+   - "vertical"    : long axis is roughly up-down          (angle ≈ 90° from horizontal)
+   - "horizontal"  : long axis is roughly left-right       (angle ≈ 0° from horizontal)
+   - "diag_tlbr"   : long axis runs from top-left to bottom-right  (\\)
+   - "diag_trbl"   : long axis runs from top-right to bottom-left  (/)
+   - "unknown"     : the object is round / symmetric / has no clear axis, or you are not confident
+   Pick the closest of the four directional bins; only use "unknown" when the object genuinely has no distinguishable axis (e.g. a ball, a lid seen top-down).
+
+Output a pure JSON object (no markdown, no code fences, no extra text) with this schema:
+{
+  "id": integer,
+  "class_name": "string",
+  "box_center_x": float,
+  "box_center_y": float,
+  "box_width": float,
+  "box_height": float,
+  "orientation": "vertical" | "horizontal" | "diag_tlbr" | "diag_trbl" | "unknown",
+  "thinking_process": "string or null",
+  "failed": boolean or null
+}
+
+Coordinate system:
+- The top-left corner is (0.000, 0.000).
+- The bottom-right corner is (1.000, 1.000).
+- The x-axis goes right from 0.000 to 1.000.
+- The y-axis goes down from 0.000 to 1.000.
+- box_center_x, box_center_y, box_width, and box_height are normalized ratios, not pixels.
+- Every bbox value MUST be between 0.000 and 1.000 with 3 decimals.
+- NEVER output raw pixel coordinates or image-size-dependent values.
+
+Rules:
+- When failed=true, still include all fields. Set bbox fields to 0.0 and orientation to "unknown".
+- When failed=false, thinking_process can be a short target-selection explanation (also feel free to briefly justify the orientation choice) or null.
+
+Example (target found, elongated object lying flat):
+{
+  "id": 1,
+  "class_name": "banana",
+  "box_center_x": 0.509,
+  "box_center_y": 0.535,
+  "box_width": 0.106,
+  "box_height": 0.355,
+  "orientation": "vertical",
+  "thinking_process": "The banana is the requested target and is visible near the lower center; its long axis runs top-to-bottom.",
+  "failed": false
+}
+
+Example (target not found):
+{
+  "id": 1,
+  "class_name": "{object_name}",
+  "box_center_x": 0.0,
+  "box_center_y": 0.0,
+  "box_width": 0.0,
+  "box_height": 0.0,
+  "orientation": "unknown",
+  "thinking_process": "The requested target is not visible in the image.",
+  "failed": true
+}
+"""

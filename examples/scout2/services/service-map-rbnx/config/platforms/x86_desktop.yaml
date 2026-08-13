@@ -1,0 +1,18 @@
+# Platform override for x86 desktop / workstation.
+# Full-resolution settings.
+
+lio:
+    lidar_filter_num: 4
+    lidar_max_range: 50.0
+    det_range: 80
+    ieskf_max_iter: 5
+    map_resolution: 0.2
+
+pgo:
+    submap_resolution: 0.08
+    min_loop_detect_duration: 3.0
+
+localizer:
+    update_hz: 2.0
+    rough_scan_resolution: 0.2
+    refine_scan_resolution: 0.08

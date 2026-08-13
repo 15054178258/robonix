@@ -1,0 +1,22 @@
+{
+  "ranger_mini_v3": {
+    "RGBD/CreateOccupancyGrid": true,
+    "Rtabmap/DetectionRate": 5.0,
+    "RGBD/LinearUpdate": 0.05,
+    "RGBD/AngularUpdate": 0.05,
+    "Mem/NotLinkedNodesKept": true,
+    "Grid/FootprintLength": 0.84,
+    "Grid/FootprintWidth": 0.60,
+    "Grid/RangeMin": 0.10
+  },
+  "webots_tiago": {
+    "RGBD/CreateOccupancyGrid": true,
+    "Rtabmap/DetectionRate": 5.0,
+    "RGBD/LinearUpdate": 0.03,
+    "RGBD/AngularUpdate": 0.03,
+    "Mem/NotLinkedNodesKept": true,
+    "RGBD/NeighborLinkRefining": false,
+    "RGBD/ProximityBySpace": false,
+    "Reg/Strategy": 0
+  }
+}

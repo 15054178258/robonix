@@ -1,0 +1,40 @@
+# mapping_rbnx — deployment target: arm64 Jetson + native (host ROS2).
+#
+# Same package, code, capabilities, and config schema as the default
+# package_manifest.yaml (see it for the full algo / sensors / map_id /
+# map_mode docs). The ONLY difference is the build/start target:
+#   build → no docker; verifies host ROS2 Humble + ros-humble-rtabmap-ros.
+#   start → start_native.sh (atlas_bridge + rtabmap as host processes).
+#
+# Use this on a Jetson whose host already runs ROS2 (no docker, or no
+# nvidia-container-runtime). Select it from a deploy manifest entry:
+#   service:
+#     - name: mapping
+#       url: https://github.com/syswonder/service-map-rbnx
+#       manifest: package_manifest.jetson-native.yaml
+#       config: { sensor_providers: {lidar3d: roof_lidar, odom: chassis} }
+manifestVersion: 1
+
+package:
+  name: com.robonix.service.mapping
+  version: 0.4.0
+  vendor: robonix
+  description: SLAM mapping service (Jetson + native host-ROS2 target).
+  license: MulanPSL-2.0
+
+build: RBNX_BUILD_TARGET=jetson-native bash scripts/build.sh
+start: ROBONIX_MAPPING_FORCE=native bash scripts/start.sh
+
+stop: ROBONIX_MAPPING_FORCE=native bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/service/map/occupancy_grid
+  - name: robonix/service/map/pointcloud
+  - name: robonix/service/map/pose
+  - name: robonix/service/map/odom
+  - name: robonix/service/map/lifecycle
+  - name: robonix/service/map/save_map
+  - name: robonix/service/map/list_maps
+  - name: robonix/service/map/load_map
+  - name: robonix/service/map/pose_estimate
+  - name: robonix/service/map/switch_mode

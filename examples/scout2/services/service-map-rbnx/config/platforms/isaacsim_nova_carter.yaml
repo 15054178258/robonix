@@ -1,0 +1,39 @@
+lio:
+    # lidar comes through mapping_rbnx/driver_shim/livox_adapter.py
+    # (PointCloud2 /front_3d_lidar/lidar_points → CustomMsg /livox/lidar).
+    # Interface abstraction preserved: robonix/primitive/lidar/lidar3d = PointCloud2.
+    lidar_topic: /livox/lidar
+    imu_topic: /chassis/imu
+    body_frame: base_link
+    world_frame: map
+
+    lidar_filter_num: 1
+    lidar_min_range: 0.3
+    lidar_max_range: 50.0
+    scan_resolution: 0.1
+    map_resolution: 0.2
+
+    det_range: 80
+    ieskf_max_iter: 5
+
+    # defaults similar to real Livox; tweak later when we have ground-truth baseline
+    na: 0.01
+    ng: 0.01
+    nba: 0.0001
+    nbg: 0.0001
+
+    imu_init_num: 20
+
+    # From Isaac Sim TF: front_3d_lidar in chassis_imu frame.
+    # Translation: 37cm above IMU, slight xy offset. Rotation: identity.
+    r_il: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    t_il: [-0.013, -0.024, 0.370]
+
+pgo:
+    submap_resolution: 0.08
+    min_loop_detect_duration: 3.0
+
+localizer:
+    update_hz: 2.0
+    rough_scan_resolution: 0.2
+    refine_scan_resolution: 0.08

@@ -1,0 +1,12 @@
+# Jetson overlay — uses L4T-based image for JetPack compatibility
+services:
+  fastlio2:
+    build:
+      dockerfile: docker/Dockerfile.jetson
+    image: mapping_rbnx:jetson
+
+  atlas-bridge:
+    build:
+      dockerfile: docker/Dockerfile.jetson
+      target: runtime
+    image: mapping_rbnx:jetson

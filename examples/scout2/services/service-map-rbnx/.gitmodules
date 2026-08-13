@@ -1,0 +1,3 @@
+[submodule "third_party/FASTLIO2_ROS2"]
+	path = third_party/FASTLIO2_ROS2
+	url = https://github.com/enkerewpo/FASTLIO2_ROS2.git

@@ -1,0 +1,20 @@
+# Detect a named object in the most recent synchronized RGB + depth +
+# camera_info sample, return its 2D bbox + 3D centroid in the camera
+# optical frame. Object name is matched via LLM vision understanding.
+#
+# Implementation: llm_detect_rbnx uses an OpenAI-compatible VLM API to
+# detect objects in camera frames. The LLM returns normalized bounding
+# box coordinates which are converted to pixel coordinates. 3D
+# back-projection uses the median depth value inside the 2D bbox and
+# the camera_info K matrix (same algorithm as yolo_world_rbnx).
+#
+# IDL: lib/perception/srv/DetectObject.srv (package-local), exposed only
+# through the atlas-routed MCP surface.
+[contract]
+id      = "robonix/service/perception/object_detect/detect_object"
+version = "1"
+kind    = "service"
+idl     = "perception/srv/DetectObject.srv"
+
+[mode]
+type = "rpc"

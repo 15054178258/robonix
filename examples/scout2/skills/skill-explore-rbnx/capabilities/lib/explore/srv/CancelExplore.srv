@@ -1,0 +1,7 @@
+# robonix/skill/explore/explore/cancel — abort the currently running explore.
+# Empty run_id = cancel whatever's active. Idempotent: cancelling an
+# already-finished task is ok=true with a "no-op" message.
+string run_id
+---
+bool ok
+string message

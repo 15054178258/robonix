@@ -1,0 +1,39 @@
+# explore_rbnx — autonomous frontier-based exploration skill.
+#
+# kind: skill (user-invocable atomic intent). LLM/pilot calls
+# robonix/skill/explore/explore() to start; returns a task_id; status
+# + cancel are sibling MCP tools. Internally orchestrates:
+#   - service/map/occupancy_grid     (read; pick frontier targets)
+#   - service/navigation/navigate    (drive to chosen frontier)
+#   - service/navigation/navigate/status      (poll goal completion)
+#
+# Doesn't subscribe to lidar / odom directly — collision avoidance is
+# the nav service's job, this skill only chooses goals. Same design
+# rule as in packaging-spec.md: "components collaborate via contracts,
+# not by reaching past each other".
+manifestVersion: 1
+
+package:
+  name: robonix.skill.explore
+  version: 0.1.0
+  description: Frontier-based autonomous exploration skill.
+  tags: [skill, explore, frontier, navigation, mapping]
+  maintainers: [wheatfox <wheatfox17@icloud.com>]
+  license: MulanPSL-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+# Fixed capability surface — everything we declare on atlas at startup
+# is listed here. New caps == bump version + update atlas_bridge.
+stop: bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/skill/explore/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/explore/explore
+    path: capabilities/explore.v1.toml
+  - name: robonix/skill/explore/explore/status
+    path: capabilities/status.v1.toml
+  - name: robonix/skill/explore/explore/cancel
+    path: capabilities/cancel.v1.toml
