@@ -31,16 +31,15 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.1
-      movement_time_allowance: 30.0
+      movement_time_allowance: 60.0
 
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.55
+      xy_goal_tolerance: 0.35
       # 6.28 rad ≈ 360° — 跳过 RotateToGoal 阶段，到达 XY 即成功。
       # 标准 RotateToGoal 没有超时，旋转不收敛时任务永远不结束。
-      # yaw_goal_tolerance: 6.28
-      yaw_goal_tolerance: 1.5708   # 90°，注意单位是弧度
+      yaw_goal_tolerance: 6.28
     # general_goal_checker:
     #   plugin: "robonix_nav2_terminal::PersistentGoalChecker"
     #   xy_enter_tolerance: 0.30
@@ -74,24 +73,18 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.05
       transform_tolerance: 0.5
-      xy_goal_tolerance: 0.55
-      yaw_goal_tolerance: 1.5708
+      xy_goal_tolerance: 0.35
+      yaw_goal_tolerance: 6.28
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
       stateful: True
-      # ========== 切换为标准 RotateToGoal，移除 PersistentRotateToGoal ==========
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      # 障碍物与路径跟踪权重（保持你调好的高刚性，防止切弯）
+      # 移除 RotateToGoal — 标准实现无超时，旋转不收敛时任务永远不结束
+      critics: ["Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       BaseObstacle.scale: 0.02
       PathAlign.scale: 32.0
       GoalAlign.scale: 24.0
       PathDist.scale: 32.0
-      GoalDist.scale: 12.0                # 保持 12，避免末端急刹
-      # ========== 标准 RotateToGoal 专属调参（适应 Scout2 大车体） ==========
-      RotateToGoal.scale: 12.0
-      RotateToGoal.slowing_factor: 3.0    # 降低减速因子（原5.0），让旋转更平顺
-      RotateToGoal.lookahead_time: -1.0    # 关键！原-1.0（无限前瞻）会导致提前扭头。设为0.3秒，仅在最后0.3米内才旋转调姿，近似模拟你之前 rotation_margin: 0.15 的效果
-      RotateToGoal.xy_goal_tolerance: 0.55 # 与上方 DWB 的 xy 容差保持一致
+      GoalDist.scale: 12.0
 
 
 bt_navigator:
@@ -153,8 +146,8 @@ local_costmap:
         # 0.55m ensures obstacles are inflated enough that RotateToGoal
         # (which starts at xy_goal_tolerance distance) won't sweep the
         # chassis corners into un-inflated obstacles.
-        inflation_radius: 0.45
-        cost_scaling_factor: 3.5
+        inflation_radius: 0.55
+        cost_scaling_factor: 7.0
 
 
 global_costmap:
@@ -198,8 +191,8 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.45
-        cost_scaling_factor: 3.5
+        inflation_radius: 0.80
+        cost_scaling_factor: 3.0
       always_send_full_costmap: true
 
 
