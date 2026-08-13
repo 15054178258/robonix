@@ -148,6 +148,19 @@ def now_header(frame_id: str) -> std_msgs_mcp.Header:
     )
 
 
+def _save_snapshot(jpg: bytes, tag: str) -> None:
+    """Save a snapshot JPEG to /tmp/robonix/ with a timestamp filename."""
+    save_dir = "/tmp/robonix"
+    os.makedirs(save_dir, exist_ok=True)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(save_dir, f"{tag}_{ts}.jpg")
+    try:
+        with open(path, "wb") as f:
+            f.write(jpg)
+    except OSError as e:
+        print(f"[scout2_camera] WARN: failed to save snapshot to {path}: {e}", flush=True)
+
+
 def jpeg_to_image_mcp(jpg: bytes, frame_id: str) -> Image:
     from PIL import Image as PILImage
     im = PILImage.open(BytesIO(jpg))
@@ -174,6 +187,7 @@ def snapshot(msg: Empty) -> Image:
         data = latest_rgb_jpeg
     if data is None:
         raise RuntimeError("no RGB image received yet")
+    _save_snapshot(data, "rgb")
     return jpeg_to_image_mcp(
         data, os.environ.get("SCOUT2_RGB_FRAME_ID", "camera_color_optical_frame")
     )
@@ -190,6 +204,7 @@ def depth_snapshot(msg: Empty) -> Image:
         data = latest_depth_jpeg
     if data is None:
         raise RuntimeError("no depth image received yet")
+    _save_snapshot(data, "depth")
     return jpeg_to_image_mcp(
         data, os.environ.get("SCOUT2_DEPTH_FRAME_ID", "camera_depth_optical_frame")
     )
