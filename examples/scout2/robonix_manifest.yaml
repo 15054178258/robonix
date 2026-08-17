@@ -22,6 +22,12 @@ system:
     listen: 0.0.0.0:50051
     log: info
   # soma+scene layer
+  soma:
+    listen: 0.0.0.0:50091
+    log: info
+  vitals:
+    listen: 0.0.0.0:50092
+    log: info
   scene:
     log: info
     # Scout2 camera optical frame for scene 3D fusion
