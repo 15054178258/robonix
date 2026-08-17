@@ -210,10 +210,10 @@ function draw(state) {
         ctx.fillStyle = color;
         ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
-        // Label = just the class. Black halo outline + class-coloured
+        // Label = short_id (e.g. tv_001). Black halo outline + class-coloured
         // fill keeps it legible on white free space, dark unknown,
         // and grey occupied alike.
-        const text = o.cls;
+        const text = o.short_id || o.cls;
         const tx = px + r + 5, ty = py;
         ctx.lineWidth = 3;
         ctx.strokeStyle = 'rgba(0,0,0,0.85)';
@@ -2477,7 +2477,7 @@ _INDEX_3D_HTML = r"""<!doctype html>
 
             // ── Label sprite ──
             if (entry.label) scene.remove(entry.label);
-            const labelText = `${obj.cls} ×${obj.num_detections}`;
+            const labelText = `${obj.short_id || obj.cls} ×${obj.num_detections}`;
             const cv = document.createElement('canvas');
             cv.width = 256; cv.height = 64;
             const ctx = cv.getContext('2d');
@@ -3135,9 +3135,9 @@ function draw() {
         const [px, py] = w2p(hoverObj.pose.x, hoverObj.pose.y);
         ctx.font = '12px ui-monospace, monospace'; ctx.textBaseline = 'middle';
         ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-        ctx.strokeText(hoverObj.cls, px + 8, py);
+        ctx.strokeText(hoverObj.short_id || hoverObj.cls, px + 8, py);
         ctx.fillStyle = '#cfe0ff';
-        ctx.fillText(hoverObj.cls, px + 8, py);
+        ctx.fillText(hoverObj.short_id || hoverObj.cls, px + 8, py);
     }
 
     // robot marker (small arrow, subtle)

@@ -680,8 +680,13 @@ class ConceptGraphsDetector:
                     inst_color = [0.5, 0.5, 0.5]
                 else:
                     inst_color = [float(v) for v in inst_color]
+                cg_uuid = str(obj.get("id", f"obj_{obj_idx}"))
+                registry_oid = (live_uuids.get(cg_uuid, "") if live_uuids else "")
+                short_id = registry_oid.split(".", 2)[-1] if registry_oid else ""
                 out.append({
-                    "id": str(obj.get("id", f"obj_{obj_idx}")),
+                    "id": cg_uuid,
+                    "object_id": registry_oid,
+                    "short_id": short_id,
                     "cls": obj.get("class_name", "object"),
                     "num_detections": int(obj.get("num_detections", 1)),
                     "n_points": int(obj.get("n_points", pts.shape[0])),
