@@ -1,0 +1,16 @@
+# Vitals — health monitoring: power state, component health, threshold alerts.
+manifestVersion: 1
+
+package:
+  name: com.robonix.system.vitals
+  version: 0.1.0
+  vendor: robonix
+  description: Vitals — health monitoring and threshold alerts.
+  license: MulanPSL-2.0
+
+start: robonix-vitals --atlas ${ROBONIX_ATLAS_ENDPOINT:-127.0.0.1:50051} --listen ${ROBONIX_VITALS_LISTEN:-0.0.0.0:50092} --log info
+
+capabilities:
+  - name: robonix/system/vitals/get
+  - name: robonix/system/vitals/stream
+  - name: robonix/system/vitals/modules/get

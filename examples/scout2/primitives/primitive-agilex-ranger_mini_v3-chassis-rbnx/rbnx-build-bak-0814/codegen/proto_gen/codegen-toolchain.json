@@ -1,0 +1,22 @@
+{
+  "generator": {
+    "kind": "binary",
+    "path": "/home/user/.cargo/bin/robonix-codegen",
+    "rust_root": "/home/user/robonix",
+    "version": null
+  },
+  "inputs": {
+    "algorithm": "sha256",
+    "proto_paths_and_contents": "7d02052339e32a32a528bb99b415cfc8ec82a14e9252452658396142ed680c62"
+  },
+  "python": {
+    "bundled_protoc": "libprotoc 35.1",
+    "executable": "/home/user/miniforge3/bin/python3",
+    "grpcio": "1.83.0",
+    "grpcio_tools": "1.83.0",
+    "protobuf": "7.35.1",
+    "selection_source": "default",
+    "version": "3.13.13"
+  },
+  "schema_version": 1
+}
