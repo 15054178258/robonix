@@ -3,22 +3,26 @@
 // Pilot-side native Soma awareness.
 //
 // Soma exposes robot body data as gRPC contracts. Pilot fetches the
-// default robot's Soma YAML and URDF once at startup, then injects the
-// result into every turn's system prompt so the model knows its body
-// without the user first calling a bridge tool.
+// default robot's Soma YAML once at startup, then injects it into every
+// turn's system prompt so the model knows its body without the user first
+// calling a bridge tool.
+//
+// Deliberately YAML only. The URDF is a full kinematic XML tree whose link
+// and joint geometry the planner never reasons over, so injecting it only
+// spent context and gave the model a second, lower-level body description to
+// contradict soma.yaml with. Soma still serves get_urdf for consumers that
+// need the kinematics; it just does not belong in a prompt.
 
 use crate::pb::contracts::{
     robonix_system_soma_get_health_client::RobonixSystemSomaGetHealthClient,
-    robonix_system_soma_get_urdf_client::RobonixSystemSomaGetUrdfClient,
     robonix_system_soma_get_yaml_client::RobonixSystemSomaGetYamlClient,
 };
-use crate::pb::soma::{GetHealthRequest, GetUrdfRequest, GetYamlRequest};
+use crate::pb::soma::{GetHealthRequest, GetYamlRequest};
 use anyhow::{Context, Result};
 use robonix_atlas::client::{self as atlas_client, AtlasClient};
 use robonix_scribe::warn;
 
 const GET_YAML_CONTRACT: &str = "robonix/system/soma/get_yaml";
-const GET_URDF_CONTRACT: &str = "robonix/system/soma/get_urdf";
 const GET_HEALTH_CONTRACT: &str = "robonix/system/soma/get_health";
 
 pub async fn fetch_runtime_prompt_block(atlas: &mut AtlasClient, consumer_id: &str) -> String {
@@ -29,7 +33,7 @@ pub async fn fetch_runtime_prompt_block(atlas: &mut AtlasClient, consumer_id: &s
              authoritative. Stale or missing fields mean unknown; never reconstruct them \
              from conversation history. `likely_holding` means the calibrated gripper is \
              not fully open; it does not identify the object.\n\n{}\n",
-            serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".into())
+            serde_json::to_string(&value).unwrap_or_else(|_| "{}".into())
         ),
         Err(error) => format!(
             "\n\n## Current embodiment state (from Soma)\n\
@@ -128,14 +132,6 @@ pub async fn fetch_system_prompt_block(
             return Ok(None);
         }
     };
-    let urdf = match fetch_urdf(atlas, consumer_id).await {
-        Ok(text) => text,
-        Err(e) => {
-            warn!("[pilot/soma] get_urdf unavailable; continuing with YAML only: {e:#}");
-            String::new()
-        }
-    };
-
     let mut block = String::from(
         "\n\n## Robot Body Context (from Soma)\n\n\
          This is the robot's self-description, loaded automatically at Pilot startup. \
@@ -155,16 +151,23 @@ pub async fn fetch_system_prompt_block(
          rotate 180 degrees, then use the front camera), state that plan clearly \
          and use motion + observation capabilities rather than pretending a missing \
          sensor exists.\n\n\
-         ### soma.yaml\n\n```yaml\n",
+         ### soma.yaml (compact JSON)\n\n```json\n",
     );
-    block.push_str(yaml.trim());
+    block.push_str(&compact_yaml(&yaml));
     block.push_str("\n```\n");
-    if !urdf.trim().is_empty() {
-        block.push_str("\n### URDF\n\n```xml\n");
-        block.push_str(urdf.trim());
-        block.push_str("\n```\n");
-    }
     Ok(Some(block))
+}
+
+/// Serialize Soma YAML without comments or presentation whitespace while
+/// preserving every data field the planner can act on.
+fn compact_yaml(raw: &str) -> String {
+    match serde_yaml::from_str::<serde_yaml::Value>(raw) {
+        Ok(value) => serde_json::to_string(&value).unwrap_or_else(|_| raw.trim().to_string()),
+        Err(error) => {
+            warn!("[pilot/soma] could not compact soma.yaml; keeping source text: {error}");
+            raw.trim().to_string()
+        }
+    }
 }
 
 async fn fetch_yaml(atlas: &mut AtlasClient, consumer_id: &str) -> Result<String> {
@@ -188,23 +191,24 @@ async fn fetch_yaml(atlas: &mut AtlasClient, consumer_id: &str) -> Result<String
     result
 }
 
-async fn fetch_urdf(atlas: &mut AtlasClient, consumer_id: &str) -> Result<String> {
-    let (channel_id, _provider_id, channel) =
-        atlas_client::connect_to_capability(atlas, consumer_id, GET_URDF_CONTRACT)
-            .await
-            .context("connect to Soma get_urdf")?;
-    let result = async {
-        let mut client = RobonixSystemSomaGetUrdfClient::new(channel);
-        let response = client
-            .get_urdf(GetUrdfRequest {
-                robot_id: String::new(),
-            })
-            .await
-            .context("call Soma get_urdf")?
-            .into_inner();
-        Ok::<_, anyhow::Error>(response.urdf_xml)
+#[cfg(test)]
+mod tests {
+    use super::compact_yaml;
+
+    #[test]
+    fn representative_soma_context_is_smaller_without_dropping_body_facts() {
+        let yaml = include_str!("../../../examples/webots/soma.yaml");
+        let compact_yaml = compact_yaml(yaml);
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let compact_value: serde_json::Value = serde_json::from_str(&compact_yaml).unwrap();
+        let before = yaml.len();
+        let after = compact_yaml.len();
+        eprintln!(
+            "representative Soma prompt bytes: before={before} after={after} reduction={:.1}%",
+            100.0 * (before - after) as f64 / before as f64
+        );
+        assert!(after < before);
+        assert_eq!(serde_json::to_value(yaml_value).unwrap(), compact_value);
+        assert!(compact_yaml.contains("front"));
     }
-    .await;
-    let _ = atlas.disconnect_capability(&channel_id).await;
-    result
 }
