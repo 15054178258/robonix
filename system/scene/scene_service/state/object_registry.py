@@ -242,6 +242,15 @@ class ObjectRegistry:
     def get_object(self, oid: str) -> Optional[SceneObject]:
         return self._objects.get(oid)
 
+    def delete_object(self, oid: str) -> Optional[SceneObject]:
+        """Remove an object from the registry by id. Returns the removed
+        object, or None if not found. Caller must hold the lock.
+
+        Used for manual deletion of misidentified objects. The caller
+        is responsible for cleaning up any external bindings (e.g.
+        concept-graphs uuid mappings)."""
+        return self._objects.pop(oid, None)
+
     def all_objects(self) -> Iterable[SceneObject]:
         return self._objects.values()
 

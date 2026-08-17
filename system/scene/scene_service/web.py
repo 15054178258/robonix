@@ -1437,6 +1437,26 @@ def make_app(*, registry: ObjectRegistry,
             return JSONResponse({"objects": [], "stamp_unix": 0.0})
         return JSONResponse(detector.export_3d_snapshot())
 
+    async def object_delete(request) -> JSONResponse:
+        """DELETE /api/objects/{object_id} — remove a misidentified object
+        from the registry so it can be re-detected fresh. Cleans up the
+        concept-graphs uuid binding to prevent re-binding on the next tick."""
+        oid = request.path_params.get("object_id", "")
+        if not oid:
+            return JSONResponse({"ok": False, "detail": "missing object_id"}, status_code=400)
+        async with registry.lock():
+            removed = registry.delete_object(oid)
+        if removed is None:
+            return JSONResponse({"ok": False, "detail": f"unknown object {oid!r}"}, status_code=404)
+        # Clean up concept-graphs uuid → oid mapping so the next detection
+        # at this location gets a fresh record instead of re-binding.
+        if detector is not None and hasattr(detector, "_uuid_to_oid"):
+            stale_uuids = [u for u, o in detector._uuid_to_oid.items() if o == oid]  # noqa: SLF001
+            for u in stale_uuids:
+                detector._uuid_to_oid.pop(u, None)  # noqa: SLF001
+        log.info("[scene] deleted object %s (cls=%s)", oid, removed.cls)
+        return JSONResponse({"ok": True, "deleted": {"id": oid, "cls": removed.cls}})
+
     async def cam(_request) -> HTMLResponse:
         return HTMLResponse(_INDEX_CAM_HTML)
 
@@ -1481,6 +1501,7 @@ def make_app(*, registry: ObjectRegistry,
         Route("/user", user_page, methods=["GET"]),
         Route("/api/state", state, methods=["GET"]),
         Route("/api/objects3d", objects3d, methods=["GET"]),
+        Route("/api/objects/{object_id}", object_delete, methods=["DELETE"]),
         Route("/api/camera", camera_state, methods=["GET"]),
         Route("/api/annotations", annotations_list, methods=["GET"]),
         Route("/api/annotations", annotations_create, methods=["POST"]),
@@ -1606,6 +1627,11 @@ _COMBINED_HTML = r"""<!doctype html>
     #info-body td.cls { color: #f0c674; white-space: nowrap; }
     #info-body td.pp { color: #6a6f7a; font-size: 10px; }
     #info-body td.miss { color: #555; }
+    #info-body th { text-align: left; font-size: 10px; color: #555;
+                     padding: 2px 4px; border-bottom: 1px solid #303542; }
+    .del-btn { background: none; border: none; color: #666; cursor: pointer;
+               font-size: 12px; padding: 0 4px; line-height: 1; }
+    .del-btn:hover { color: #f55; }
     /* Relation list: one "<source> <predicate> <target>" row per edge,
        replacing the old on-canvas dashed lines. */
     #info-rels .rel { display: flex; gap: 6px; align-items: baseline;
@@ -1667,7 +1693,8 @@ _COMBINED_HTML = r"""<!doctype html>
       <div class="pose" id="info-pose">no fix yet</div>
       <h2>objects</h2>
       <table>
-        <tbody id="info-objs"><tr><td colspan="3" style="color:#555">—</td></tr></tbody>
+        <thead><tr><th>id</th><th>class</th><th>pose / conf</th><th></th></tr></thead>
+        <tbody id="info-objs"><tr><td colspan="4" style="color:#555">—</td></tr></tbody>
       </table>
       <h2>relations</h2>
       <div id="info-rels"><span style="color:#555">—</span></div>
@@ -1779,6 +1806,27 @@ _COMBINED_HTML = r"""<!doctype html>
       if (fphead._dragged) fpSave();
     });
 
+    // Delete object handler (event delegation on the tbody).
+    document.getElementById('info-objs').addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('.del-btn');
+      if (!btn) return;
+      const oid = btn.dataset.oid;
+      if (!oid) return;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const r = await fetch(`/api/objects/${encodeURIComponent(oid)}`, { method: 'DELETE' });
+        if (r.ok) {
+          btn.textContent = '✓'; btn.style.color = '#5a5';
+        } else {
+          const d = await r.json().catch(() => ({}));
+          btn.textContent = '!'; btn.style.color = '#f55';
+          btn.title = d.detail || 'delete failed';
+        }
+      } catch (_) {
+        btn.textContent = '!'; btn.style.color = '#f55';
+      }
+    });
+
     // Fetch /api/state and populate the floating panel.
     const fmt = n => Number(n).toFixed(2);
     async function fpTick() {
@@ -1799,7 +1847,7 @@ _COMBINED_HTML = r"""<!doctype html>
           }
           const tbody = document.getElementById('info-objs');
           if (!objs.length) {
-            tbody.innerHTML = '<tr><td colspan="3" style="color:#555">—</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="color:#555">—</td></tr>';
           } else {
             tbody.innerHTML = objs.map(o => `
               <tr>
@@ -1808,6 +1856,7 @@ _COMBINED_HTML = r"""<!doctype html>
                 <td class="pp ${o.missing ? 'miss' : ''}">
                   (${fmt(o.pose.x)}, ${fmt(o.pose.y)}) c=${fmt(o.confidence)}
                 </td>
+                <td><button class="del-btn" data-oid="${o.id}" title="delete this object">✕</button></td>
               </tr>
             `).join('');
           }
