@@ -71,12 +71,6 @@ _SG_STORE: SceneGraphStore | None = None
 _ANNO_STORE: "AnnotationStore | None" = None
 _ROBOT_GEOMETRY: RobotGeometryState | None = None
 
-# Nav2 global_costmap subscriber — preferred over static occupancy_grid for
-# goal_near because it includes the real-time obstacle layer (lidar).
-_NAV2_COSTMAP_MSG = None
-_NAV2_COSTMAP_LOCK = __import__("threading").Lock()
-_NAV2_COSTMAP_SUB = None
-
 # Scene Hook: when list_objects detects visible objects, automatically
 # capture the latest RGB frame and POST to memgraph's Scene Hook HTTP
 # endpoint so the robot's memory is updated without Pilot involvement.
@@ -255,47 +249,6 @@ def attach_scene_graph_store(store: SceneGraphStore) -> None:
 def attach_annotation_store(store: "AnnotationStore | None") -> None:
     global _ANNO_STORE
     _ANNO_STORE = store
-
-
-def start_nav2_costmap_subscriber(node) -> None:
-    """Subscribe to nav2's /global_costmap/costmap for goal_near BFS.
-
-    This costmap includes the real-time obstacle layer (lidar) on top of the
-    static map, so goal_near returns cells that are actually free in nav2's
-    world view — not just the static map.
-    """
-    global _NAV2_COSTMAP_SUB
-    try:
-        from nav_msgs.msg import OccupancyGrid  # type: ignore
-        _NAV2_COSTMAP_SUB = node.create_subscription(
-            OccupancyGrid,
-            "/global_costmap/costmap",
-            _nav2_costmap_callback,
-            10,
-        )
-        import logging
-        logging.getLogger("scene-goal-near").info(
-            "subscribed to /global_costmap/costmap for goal_near"
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger("scene-goal-near").warning(
-            "failed to subscribe to /global_costmap/costmap: %s", e
-        )
-
-
-def _nav2_costmap_callback(msg) -> None:
-    import logging
-    logging.getLogger("scene-goal-near").info("received nav2 costmap: %dx%d", msg.info.width, msg.info.height)
-    global _NAV2_COSTMAP_MSG
-    with _NAV2_COSTMAP_LOCK:
-        _NAV2_COSTMAP_MSG = msg
-
-
-def _get_nav2_costmap():
-    """Return the latest nav2 costmap message, or None if unavailable."""
-    with _NAV2_COSTMAP_LOCK:
-        return _NAV2_COSTMAP_MSG
 
 
 # ── conversions: SceneObject → IDL Object ──────────────────────────────────
@@ -625,36 +578,25 @@ async def goal_near(req: GoalNear_Request) -> GoalNear_Response:
         # returned pose toward the target.
         approach_ang = None
 
-    # Prefer nav2's global_costmap (includes real-time lidar obstacles) over
-    # the static occupancy_grid for goal_near BFS.  This ensures the returned
-    # approach pose is actually free in nav2's world view.
-    import logging
-    _log = logging.getLogger("scene-goal-near")
-    nav2_msg = _get_nav2_costmap()
-    if nav2_msg is not None and nav2_msg.info.width and nav2_msg.info.height:
-        msg = nav2_msg
-        _log.debug("goal_near using nav2 global_costmap (%dx%d)",
-                    nav2_msg.info.width, nav2_msg.info.height)
-    else:
-        if _HUB is None or not _HUB.has("occupancy_grid"):
-            return GoalNear_Response(
-                reachable=False,
-                x=float(target.pose.x), y=float(target.pose.y), yaw=0.0,
-                reason="no occupancy_grid available — mapping not running",
-            )
-        try:
-            msg, _stamp, count = _HUB.latest("occupancy_grid")
-        except Exception as e:  # noqa: BLE001
-            return GoalNear_Response(
-                reachable=False, x=0.0, y=0.0, yaw=0.0,
-                reason=f"occupancy_grid hub error: {e}",
-            )
-        if msg is None or count == 0 or not msg.info.width or not msg.info.height:
-            return GoalNear_Response(
-                reachable=False, x=0.0, y=0.0, yaw=0.0,
-                reason="occupancy_grid empty — wait for mapping to publish",
-            )
-        _log.debug("goal_near using static occupancy_grid (nav2 costmap unavailable)")
+    if _HUB is None or not _HUB.has("occupancy_grid"):
+        return GoalNear_Response(
+            reachable=False,
+            x=float(target.pose.x), y=float(target.pose.y), yaw=0.0,
+            reason="no occupancy_grid available — mapping not running",
+        )
+
+    try:
+        msg, _stamp, count = _HUB.latest("occupancy_grid")
+    except Exception as e:  # noqa: BLE001
+        return GoalNear_Response(
+            reachable=False, x=0.0, y=0.0, yaw=0.0,
+            reason=f"occupancy_grid hub error: {e}",
+        )
+    if msg is None or count == 0 or not msg.info.width or not msg.info.height:
+        return GoalNear_Response(
+            reachable=False, x=0.0, y=0.0, yaw=0.0,
+            reason="occupancy_grid empty — wait for mapping to publish",
+        )
     grid_frame = str(
         getattr(getattr(msg, "header", None), "frame_id", "") or ""
     ).strip()
@@ -684,11 +626,14 @@ async def goal_near(req: GoalNear_Request) -> GoalNear_Response:
         max(0.0, float(target.bbox.size_x)) * 0.5,
         max(0.0, float(target.bbox.size_y)) * 0.5,
     )
-    # Keep a physical clearance beyond the robot/object geometry.  This is
-    # deliberately a constant for the v1 contract: it affects object approach
-    # goals only, while ordinary coordinate navigation remains unchanged.
-    _SAFETY_BUFFER_M = 0.2
+    # Add a safety buffer to ensure we don't navigate too close to the object.
+    # This accounts for perception uncertainty and robot dynamics.
+    _SAFETY_BUFFER_M = 0.2  # 20cm safety buffer
     minimum_standoff_m = footprint.circumscribed_radius_m + target_radius_m + _SAFETY_BUFFER_M
+    
+    # Determine desired_yaw for the robot's final heading
+    # If approach_yaw is specified in request, use it; otherwise face the object
+    desired_yaw = approach_ang if math.isfinite(approach_yaw_req) else None
     
     found = object_goal(
         msg,
@@ -697,10 +642,7 @@ async def goal_near(req: GoalNear_Request) -> GoalNear_Response:
         preferred_approach_yaw=approach_ang,
         minimum_standoff_m=minimum_standoff_m,
         footprint=footprint,
-        # Let the planner derive heading from the final candidate cell.
-        # `approach_ang` is the current robot-to-object direction and is not
-        # necessarily the direction from the final approach cell to the object.
-        desired_yaw=None,
+        desired_yaw=desired_yaw,
     )
     if found is None:
         return GoalNear_Response(
@@ -735,15 +677,13 @@ async def goal_near(req: GoalNear_Request) -> GoalNear_Response:
         
         if idx < len(grid_array):
             cost = int(grid_array[idx])
-            # Unknown cells are encoded as -1 after OccupancyGrid's signed
-            # int8 data is decoded. A returned approach pose must be known
-            # free, not merely non-obstacle, so it agrees with object_goal.
-            if cost < 0 or cost > 50:
+            # cost > 50 means obstacle (Nav2 uses 0-100 for costs, 253 for lethal)
+            if cost > 50:
                 import logging
                 log = logging.getLogger("scene-goal-near")
                 log.warning(
-                    "goal_near: returned coordinates (%.3f, %.3f) are not known-free "
-                    "in occupancy grid (cost=%d), adjusting",
+                    "goal_near: returned coordinates (%.3f, %.3f) are on obstacle (cost=%d) "
+                    "in occupancy grid, adjusting to avoid obstacle",
                     gx, gy, cost,
                 )
                 # Try to find a nearby point that is not an obstacle
@@ -761,25 +701,10 @@ async def goal_near(req: GoalNear_Request) -> GoalNear_Response:
                                 check_idx = check_y * grid_width + check_x
                                 if check_idx < len(grid_array):
                                     check_cost = int(grid_array[check_idx])
-                                    candidate_x = grid_origin_x + (check_x + 0.5) * grid_resolution
-                                    candidate_y = grid_origin_y + (check_y + 0.5) * grid_resolution
-                                    candidate_distance = math.hypot(
-                                        candidate_x - float(target.pose.x),
-                                        candidate_y - float(target.pose.y),
-                                    )
-                                    if (
-                                        0 <= check_cost <= 50
-                                        and candidate_distance + 1e-9 >= minimum_standoff_m
-                                    ):
+                                    if check_cost <= 50:
                                         # Found a non-obstacle point
-                                        gx, gy = candidate_x, candidate_y
-                                        # The fallback changed the position, so
-                                        # the old yaw is no longer valid. Face
-                                        # the target from the final goal cell.
-                                        yaw = math.atan2(
-                                            float(target.pose.y) - gy,
-                                            float(target.pose.x) - gx,
-                                        )
+                                        gx = grid_origin_x + (check_x + 0.5) * grid_resolution
+                                        gy = grid_origin_y + (check_y + 0.5) * grid_resolution
                                         adjusted = True
                                         log.info(
                                             "goal_near: adjusted to (%.3f, %.3f) to avoid obstacle",
@@ -791,40 +716,16 @@ async def goal_near(req: GoalNear_Request) -> GoalNear_Response:
                     if adjusted:
                         break
     
-    final_distance = math.hypot(
-        float(gx) - float(target.pose.x),
-        float(gy) - float(target.pose.y),
-    )
-    if final_distance + 1e-9 < minimum_standoff_m:
-        return GoalNear_Response(
-            reachable=False,
-            x=0.0,
-            y=0.0,
-            yaw=0.0,
-            reason=(
-                f"final approach pose is too close to '{req.object_id}' "
-                f"({final_distance:.3f}m < {minimum_standoff_m:.3f}m)"
-            ),
-        )
-
-    # Always face the target from the final returned cell.  In particular, do
-    # this after the occupancy fallback because that fallback may move gx/gy.
-    yaw = math.atan2(
-        float(target.pose.y) - float(gy),
-        float(target.pose.x) - float(gx),
-    )
-
     # Debug logging to help diagnose navigation issues
     import logging
     log = logging.getLogger("scene-goal-near")
     log.info(
         "goal_near result: object=%s target=(%.3f, %.3f) approach=(%.3f, %.3f) "
-        "minimum_standoff=%.3f target_radius=%.3f final_distance=%.3f yaw=%.3f",
+        "minimum_standoff=%.3f target_radius=%.3f",
         req.object_id,
         float(target.pose.x), float(target.pose.y),
         gx, gy,
         minimum_standoff_m, target_radius_m,
-        final_distance, yaw,
     )
     
     return GoalNear_Response(

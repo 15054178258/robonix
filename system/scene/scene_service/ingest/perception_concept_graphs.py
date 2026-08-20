@@ -200,6 +200,9 @@ _CFG_DEFAULTS = {
     # Saves ~65 % GPU on the common "robot sitting still" case without
     # losing new-object discovery (just delayed by 1–2 ticks).
     "detection_interval_ticks": 3,
+    # A jump larger than this between consecutive map-frame estimates means
+    # the target needs a fresh stability streak before navigation.
+    "stable_pose_jump_m": 0.30,
     # Periodic-cleanup thresholds (passed to merge_overlap_objects /
     # denoise_objects in concept-graphs.utils). obj_min_points is the cull
     # gate inside filter_objects: thin/small objects (keyboard, lamp) backproject
@@ -1862,6 +1865,9 @@ class ConceptGraphsDetector:
                     "size_y": float(max(0.05, obb_extent[1])),
                     "size_z": float(max(0.05, obb_extent[2])),
                     "confidence": max(0.0, min(1.0, conf)),
+                    "source_observation_count": int(
+                        obj.get("num_detections", len(conf_list) or 1)
+                    ),
                 })
             except Exception:  # noqa: BLE001
                 continue
@@ -1990,6 +1996,40 @@ class ConceptGraphsDetector:
                     # Update in place. Preserve oid + first_seen. The count is
                     # registry-owned (one per tick seen) so it survives a uuid
                     # swap instead of resetting to the CG object's num_detections.
+                    was_missing = bool(existing.missing)
+                    was_restored = bool(existing.attributes.get("restored"))
+                    previous_source_count = int(
+                        existing.attributes.get("cg_observation_count", 0)
+                    )
+                    source_count = int(
+                        s.get("source_observation_count", previous_source_count + 1)
+                    )
+                    has_new_observation = source_count > previous_source_count
+                    pose_jump_m = math.hypot(
+                        float(pose.x) - float(existing.pose.x),
+                        float(pose.y) - float(existing.pose.y),
+                    )
+                    stable_count = int(
+                        existing.attributes.get(
+                            "stable_observation_count", existing.observation_count
+                        )
+                    )
+                    stability_reset = (
+                        was_missing
+                        or was_restored
+                        or pose_jump_m
+                        > float(self.cfg.get("stable_pose_jump_m", 0.30))
+                    )
+                    if stability_reset:
+                        stable_count = 1 if has_new_observation else 0
+                        if not has_new_observation:
+                            existing.attributes.pop("stable_observation_at", None)
+                    elif has_new_observation:
+                        stable_count += 1
+                    if has_new_observation:
+                        existing.attributes["stable_observation_at"] = now
+                    existing.attributes["stable_observation_count"] = stable_count
+                    existing.attributes["cg_observation_count"] = source_count
                     existing.pose = pose
                     existing.bbox = bbox
                     existing.confidence = max(0.0, min(1.0, s["confidence"]))
@@ -2011,6 +2051,11 @@ class ConceptGraphsDetector:
                     if u:
                         obj.attributes["cg_uuid"] = u
                         self._uuid_to_oid[u] = obj.object_id
+                    obj.attributes["stable_observation_count"] = 1
+                    obj.attributes["stable_observation_at"] = now
+                    obj.attributes["cg_observation_count"] = int(
+                        s.get("source_observation_count", 1)
+                    )
                     adopted_oids.add(obj.object_id)
 
             # Evict registry records whose source uuid is gone. Runs AFTER

@@ -21,7 +21,7 @@ use crate::plan_runtime::{PlanRuntime, StopWhen};
 use crate::rtdl_wire::{self, NodeEventContext};
 use robonix_atlas::client::AtlasClient;
 use robonix_scribe::{info, warn};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -149,21 +149,134 @@ fn execute_node(
             RTDL_SEQUENCE => {
                 let mut any_failed = false;
                 let mut cancelled = false;
-                for child in &node.children {
+                // Track results of completed do-nodes for variable substitution.
+                // Key: contract_id leaf (e.g. "goal_near"), Value: output string.
+                let mut step_results: HashMap<String, String> = HashMap::new();
+                let mut child_idx = 0usize;
+                while child_idx < node.children.len() {
+                    let child_index = node.children[child_idx] as usize;
                     if runtime.is_cancelled(&plan.plan_id).await {
                         cancelled = true;
                         any_failed = true;
                         break;
                     }
-                    any_failed |= execute_node(
-                        Arc::clone(&plan),
-                        *child as usize,
-                        tx.clone(),
-                        atlas.clone(),
-                        provider_id.clone(),
-                        runtime.clone(),
-                    )
-                    .await;
+
+                    let child_node = &plan.nodes[child_index];
+                    // Check if this is a navigate call preceded by goal_near in
+                    // the same sequence.  If so, substitute the goal_near result
+                    // into the navigate args so the LLM's pre-filled (usually
+                    // wrong) coordinates are overwritten.
+                    let maybe_patched_call: Option<CapabilityCall> =
+                        if child_node.node_kind == RTDL_DO {
+                            let call = child_node.call.as_ref();
+                            match call {
+                                Some(c) if c.contract_id.ends_with("/navigate") => {
+                                    // Look for a preceding goal_near or goal_room result.
+                                    let source = step_results
+                                        .get("goal_near")
+                                        .or_else(|| step_results.get("goal_room"));
+                                    match source {
+                                        Some(output) => {
+                                            patch_navigate_args(c, output)
+                                        }
+                                        None => None,
+                                    }
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                    // If we patched the call, temporarily swap the node's call
+                    // field.  We need interior mutability here — the plan is
+                    // Arc<Plan>, so we store patched calls in a side map and
+                    // use a wrapper that executes the patched call directly.
+                    let failed = if let Some(ref patched) = maybe_patched_call {
+                        // Execute the patched call directly, bypassing execute_node
+                        // which would use the original args.
+                        let node_ctx = node_event_context(&plan, child_index);
+                        execute_call(
+                            patched,
+                            node_ctx,
+                            tx.clone(),
+                            atlas.clone(),
+                            provider_id.clone(),
+                            runtime.clone(),
+                        )
+                        .await
+                    } else {
+                        execute_node(
+                            Arc::clone(&plan),
+                            child_index,
+                            tx.clone(),
+                            atlas.clone(),
+                            provider_id.clone(),
+                            runtime.clone(),
+                        )
+                        .await
+                    };
+
+                    // Record the result for variable substitution in later steps.
+                    // We only need do-node results (leaf calls).
+                    if child_node.node_kind == RTDL_DO {
+                        if let Some(ref call) = child_node.call {
+                            let leaf = call.contract_id.rsplit_once('/').map(|(_, l)| l);
+                            if let Some(leaf_name) = leaf {
+                                // We don't have the result string here (it was
+                                // sent via tx), but for navigate-patching we
+                                // only need the PRECEDING goal_near/goal_room
+                                // output.  Store a sentinel so the next
+                                // iteration knows a result exists; the actual
+                                // value comes from the plan_runtime result cache.
+                                //
+                                // Actually we DO have it: execute_call /
+                                // execute_node internally dispatch and the
+                                // result is logged.  But we can't capture it
+                                // without refactoring.  Instead, store the
+                                // patched output when we DO have it (from the
+                                // goal_near case below).
+                                //
+                                // For the general case we store an empty string
+                                // as a marker that the step succeeded.
+                                step_results
+                                    .entry(leaf_name.to_string())
+                                    .or_insert_with(String::new);
+                            }
+                        }
+                    }
+
+                    // Special handling: if we just executed goal_near (patched
+                    // or not), we need its actual output for the NEXT navigate
+                    // step.  Re-query the scene service to get the latest
+                    // approach pose.  This is a fallback for when the result
+                    // wasn't captured from the call.
+                    if child_node.node_kind == RTDL_DO {
+                        if let Some(ref call) = child_node.call {
+                            if call.contract_id.ends_with("/goal_near")
+                                || call.contract_id.ends_with("/goal_room")
+                            {
+                                // The goal_near result was sent via tx; we
+                                // can't easily capture it here.  Instead,
+                                // proactively query the scene service for the
+                                // latest approach pose of the target object.
+                                if let Some(approach_output) =
+                                    query_scene_approach(&call.args_json, &atlas, &provider_id)
+                                        .await
+                                {
+                                    let leaf = call
+                                        .contract_id
+                                        .rsplit_once('/')
+                                        .map(|(_, l)| l)
+                                        .unwrap_or("goal_near");
+                                    step_results.insert(leaf.to_string(), approach_output);
+                                }
+                            }
+                        }
+                    }
+
+                    any_failed |= failed;
+                    child_idx += 1;
                     if any_failed {
                         break;
                     }
@@ -298,6 +411,116 @@ fn leaf_terminal_state(success: bool, cancelled: bool) -> u32 {
     } else {
         RtdlNodeStateEnum::Failed as u32
     }
+}
+
+/// When a sequence contains goal_near → navigate, the LLM typically
+/// pre-fills navigate args with hallucinated coordinates.  This function
+/// parses the goal_near/goal_room output JSON and patches the navigate
+/// call's goal pose to use the returned x, y, yaw.
+///
+/// Returns `Some(patched_call)` if patching succeeded, `None` otherwise.
+fn patch_navigate_args(
+    original: &CapabilityCall,
+    scene_output: &str,
+) -> Option<CapabilityCall> {
+    // Parse goal_near/goal_room output: expect JSON with x, y, yaw fields.
+    let val: serde_json::Value = serde_json::from_str(scene_output).ok()?;
+    let x = val.get("x")?.as_f64()?;
+    let y = val.get("y")?.as_f64()?;
+    let yaw = val.get("yaw")?.as_f64()?;
+    let reachable = val.get("reachable")?.as_bool().unwrap_or(false);
+    if !reachable {
+        info!(
+            "[executor/patch] goal_near returned reachable=false, skipping navigate patch"
+        );
+        return None;
+    }
+
+    // Parse the navigate args and replace the goal pose.
+    let mut args: serde_json::Value = serde_json::from_str(&original.args_json).ok()?;
+    let goal = args.get_mut("goal")?;
+    let pose = goal.get_mut("pose")?;
+    let position = pose.get_mut("position")?;
+    position["x"] = serde_json::json!(x);
+    position["y"] = serde_json::json!(y);
+    position["z"] = serde_json::json!(0.0);
+
+    // Set orientation from yaw (quaternion z, w).
+    let orientation = pose.get_mut("orientation")?;
+    orientation["x"] = serde_json::json!(0.0);
+    orientation["y"] = serde_json::json!(0.0);
+    orientation["z"] = serde_json::json!((yaw / 2.0).sin());
+    orientation["w"] = serde_json::json!((yaw / 2.0).cos());
+
+    let patched_args = serde_json::to_string(&args).ok()?;
+    info!(
+        "[executor/patch] substituted goal_near result into navigate: x={:.3}, y={:.3}, yaw={:.3}",
+        x, y, yaw
+    );
+    Some(CapabilityCall {
+        call_id: original.call_id.clone(),
+        provider_id: original.provider_id.clone(),
+        contract_id: original.contract_id.clone(),
+        args_json: patched_args,
+    })
+}
+
+/// Query the scene service for the latest approach pose of the object
+/// referenced in a goal_near/goal_room call's args.  Returns the MCP
+/// tool output string (JSON with x, y, yaw, reachable) or None.
+async fn query_scene_approach(
+    args_json: &str,
+    atlas: &AtlasClient,
+    consumer_id: &str,
+) -> Option<String> {
+    // Parse the object_id from the goal_near args.
+    let args: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    let object_id = args.get("object_id")?.as_str()?;
+
+    // Find the scene goal_near capability via atlas.
+    let contract_id = "robonix/system/scene/goal_near";
+    let mut atlas_mut = atlas.clone();
+    let recs = atlas_mut
+        .query_capabilities("", contract_id, robonix_atlas::pb::Transport::Mcp)
+        .await
+        .unwrap_or_default();
+    if recs.is_empty() {
+        warn!("[executor/patch] scene goal_near capability not found in atlas");
+        return None;
+    }
+    let cap = &recs[0];
+
+    // Connect to the MCP endpoint.
+    let (channel_id, endpoint, _params) = atlas_mut
+        .connect_capability(
+            consumer_id,
+            &cap.id,
+            contract_id,
+            robonix_atlas::pb::Transport::Mcp,
+        )
+        .await
+        .ok()?;
+    if endpoint.trim().is_empty() {
+        let _ = atlas_mut.disconnect_capability(&channel_id).await;
+        return None;
+    }
+
+    // Call goal_near via the existing MCP dispatch.
+    let call = CapabilityCall {
+        call_id: "patch_goal_near".to_string(),
+        provider_id: cap.id.clone(),
+        contract_id: contract_id.to_string(),
+        args_json: serde_json::json!({"object_id": object_id, "approach_yaw": 0.0}).to_string(),
+    };
+    let result = crate::dispatch::mcp::execute(&call, &endpoint).await;
+    let _ = atlas_mut.disconnect_capability(&channel_id).await;
+
+    if !result.success || result.output.is_empty() {
+        warn!("[executor/patch] scene goal_near call failed: {}", result.error);
+        return None;
+    }
+    info!("[executor/patch] queried scene goal_near: {}", &result.output[..result.output.len().min(256)]);
+    Some(result.output)
 }
 
 /// Emit the terminal event for an `on_enter` stop point on any RTDL node.

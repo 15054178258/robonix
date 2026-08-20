@@ -1574,6 +1574,15 @@ async def _run() -> None:
         robot_geometry=robot_geometry,
     )
 
+    # Start nav2 costmap subscriber for goal_near BFS. This uses nav2's
+    # global_costmap (static + lidar obstacle layer) instead of the raw
+    # static occupancy_grid, so goal_near returns cells that are actually
+    # free in nav2's world view.
+    try:
+        mcp_tools.start_nav2_costmap_subscriber(hub._node)
+    except Exception as e:
+        log.warning("[scene] failed to start nav2 costmap subscriber: %s", e)
+
     # Wire the persistence embedder to perception's loaded CLIP text encoder
     # (same 512-d space as the per-object image features). The VLM-fallback
     # detector has no `embed_text`; persistence then stores placeholder

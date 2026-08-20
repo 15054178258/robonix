@@ -316,8 +316,7 @@ class ExploreController:
                                  f"hit {handle.timeout_s}s ceiling")
                 return
 
-            # Quiet-area check: if frontier count has been low + area
-            # hasn't grown for DONE_QUIET_SECONDS, declare done.
+            # Get latest map + pose.
             with self._lock:
                 latest = self._latest_map
                 pose_xyyaw = self._latest_pose_xyyaw
@@ -332,13 +331,6 @@ class ExploreController:
             handle.last_area_m2 = cur_area
             n_frontiers = total_frontier_count(
                 gv, min_size=self.FRONTIER_MIN_SIZE_CELLS)
-            if n_frontiers == 0 and \
-                    time.time() - handle.last_progress_t > self.DONE_QUIET_SECONDS:
-                self._terminate(handle, "done",
-                                f"no frontiers + no progress for "
-                                f"{self.DONE_QUIET_SECONDS:.0f}s "
-                                f"(area={cur_area:.1f}m²)")
-                return
 
             # Pick next target.
             if pose is None:
@@ -352,6 +344,21 @@ class ExploreController:
                                   min_size=self.FRONTIER_MIN_SIZE_CELLS,
                                   max_distance_m=self.MAX_FRONTIER_DISTANCE_M,
                                   visited_cells=visited_snapshot)
+
+            # Done check: declare done when no progress for
+            # DONE_QUIET_SECONDS AND either (a) no frontiers remain at
+            # all, or (b) no reachable frontier within range.  Without
+            # (b) the task loops forever when frontiers exist but are
+            # all farther than MAX_FRONTIER_DISTANCE_M.
+            no_progress = time.time() - handle.last_progress_t > self.DONE_QUIET_SECONDS
+            if no_progress and (n_frontiers == 0 or target is None):
+                reason = "no frontiers" if n_frontiers == 0 else "no reachable frontier"
+                self._terminate(handle, "done",
+                                f"{reason} + no progress for "
+                                f"{self.DONE_QUIET_SECONDS:.0f}s "
+                                f"(area={cur_area:.1f}m²)")
+                return
+
             if target is None:
                 # No safe frontier picked, but quiet timer hasn't fired
                 # yet → the map likely doesn't have ENOUGH known-free
@@ -476,7 +483,11 @@ class ExploreController:
                 x, y, yaw=target_yaw, timeout_s=segment_timeout,
                 cancel_evt=handle)
             if not ok:
-                return
+                log.warning("[%s] sweep step yaw=%s failed; "
+                            "continuing to next angle",
+                            handle.task_id,
+                            math.degrees(target_yaw) % 360)
+                continue
             time.sleep(0.5)
 
     # ── Nav RPC over MCP HTTP ──────────────────────────────────────

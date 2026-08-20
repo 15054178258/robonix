@@ -95,3 +95,98 @@ def test_room_goal_accepts_ros_signed_int8_sequence():
         _footprint(0.1, 0.1),
         yaw_candidates=room_yaw_candidates(room),
     ) is None
+
+
+def test_object_goal_rejects_unknown_cells():
+    """An object approach pose must not be selected from unexplored map space."""
+    grid = _grid(fill=-1)
+    result = object_goal(
+        grid,
+        target_x=0.0,
+        target_y=0.0,
+        preferred_approach_yaw=None,
+        minimum_standoff_m=0.4,
+        footprint=_footprint(0.1, 0.1),
+    )
+    assert result is None
+
+
+def test_object_goal_minimum_safety_margin():
+    """When minimum_standoff_m is very small, the result should still be at
+    least 0.3m away from the target (the default safety margin)."""
+    grid = _grid(width=30, height=30)
+    result = object_goal(
+        grid,
+        target_x=0.0,
+        target_y=0.0,
+        preferred_approach_yaw=0.0,
+        minimum_standoff_m=0.0,  # Very small standoff
+        footprint=_footprint(0.1, 0.1),
+    )
+    assert result is not None
+    x, y, yaw = result
+    distance = (x * x + y * y) ** 0.5
+    # Should be at least 0.3m away due to the safety margin
+    assert distance >= 0.3, f"Distance {distance:.3f}m is less than 0.3m safety margin"
+    assert np.isfinite([x, y, yaw]).all()
+
+
+def test_object_goal_not_at_target():
+    """The returned pose should never be exactly at the target coordinates."""
+    grid = _grid(width=30, height=30)
+    target_x, target_y = 0.5, 0.3
+    result = object_goal(
+        grid,
+        target_x=target_x,
+        target_y=target_y,
+        preferred_approach_yaw=None,
+        minimum_standoff_m=0.0,
+        footprint=_footprint(0.15, 0.15),
+    )
+    assert result is not None
+    x, y, yaw = result
+    # Ensure the result is not at the target position
+    distance_to_target = ((x - target_x) ** 2 + (y - target_y) ** 2) ** 0.5
+    assert distance_to_target > 0.01, f"Result is too close to target: {distance_to_target:.3f}m"
+
+
+def test_object_goal_desired_yaw():
+    """When desired_yaw is specified, the returned yaw should match it."""
+    grid = _grid(width=30, height=30)
+    desired_yaw = math.pi / 2  # 90 degrees
+    result = object_goal(
+        grid,
+        target_x=0.0,
+        target_y=0.0,
+        preferred_approach_yaw=0.0,
+        minimum_standoff_m=0.4,
+        footprint=_footprint(0.2, 0.1),
+        desired_yaw=desired_yaw,
+    )
+    assert result is not None
+    x, y, yaw = result
+    # The yaw should match the desired_yaw
+    assert abs(yaw - desired_yaw) < 1e-9, f"Expected yaw {desired_yaw}, got {yaw}"
+    # Position should still be at safe distance
+    distance = (x * x + y * y) ** 0.5
+    assert distance >= 0.4, f"Distance {distance:.3f}m is less than 0.4m"
+
+
+def test_object_goal_desired_yaw_none():
+    """When desired_yaw is None, the robot should face the object."""
+    grid = _grid(width=30, height=30)
+    target_x, target_y = 0.5, 0.3
+    result = object_goal(
+        grid,
+        target_x=target_x,
+        target_y=target_y,
+        preferred_approach_yaw=None,
+        minimum_standoff_m=0.4,
+        footprint=_footprint(0.2, 0.1),
+        desired_yaw=None,
+    )
+    assert result is not None
+    x, y, yaw = result
+    # Calculate expected yaw (facing the object)
+    expected_yaw = math.atan2(target_y - y, target_x - x)
+    assert abs(yaw - expected_yaw) < 1e-9, f"Expected yaw {expected_yaw}, got {yaw}"

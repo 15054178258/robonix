@@ -1,5 +1,6 @@
 # Scout2 Nav2 configuration.
-# Uses robonix_nav2_terminal plugins (GoalAwareNavfnPlanner) compiled in the nav2 Docker image.
+# Uses robonix_nav2_terminal plugins (PersistentRotateToGoal, PersistentGoalChecker,
+# GoalAwareNavfnPlanner) compiled in the nav2 Docker image.
 # Scout2 chassis: 0.925 x 0.38 m; wheel outer edge: 0.827 x 0.700 m.
 # Octagonal footprint covers chassis + all 4 wheels.
 # max linear 0.3 m/s, max angular 0.6 rad/s.
@@ -10,12 +11,10 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "robonix_nav2_terminal::GoalAwareNavfnPlanner"
-      tolerance: 0.5
-      use_astar: true
-      allow_unknown: false
-      # 关键参数
-      allow_goal_in_obstacle: false   # 禁止目标落在障碍物内
-      goal_search_radius: 0.8         # 如果goal在障碍/膨胀区，在目标点周围0.8m搜索最近自由栅格，作为实际路径终点，实现停物体前方
+      # Accept paths with more unknown areas for better reachability
+      max_unknown_ratio: 0.50
+      max_unknown_length: 10.0
+      max_unknown_run: 6.0
     GridBased_known:
       tolerance: 2.0
       allow_unknown: false
@@ -33,7 +32,6 @@ controller_server:
     failure_tolerance: 5.0
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
-    # 只注册 RotationShimController，DWB 作为内嵌的 primary_controller
     controller_plugins: ["FollowPath"]
 
     progress_checker:
@@ -42,29 +40,20 @@ controller_server:
       movement_time_allowance: 30.0
 
     general_goal_checker:
-      # 使用标准 SimpleGoalChecker，避免与 RotationShim 终点旋转冲突
-      plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.40
-      yaw_goal_tolerance: 0.25
-      stateful: true
+      # ControllerServer resets ordinary goal checkers on every global replan.
+      # This checker preserves the same-goal terminal latch with hysteresis.
+      plugin: "robonix_nav2_terminal::PersistentGoalChecker"
+      xy_enter_tolerance: 0.40
+      xy_exit_tolerance: 0.55
+      yaw_enter_tolerance: 0.25
+      yaw_exit_tolerance: 0.35
+      stopped_linear_velocity: 0.05
+      stopped_angular_velocity: 0.05
 
     FollowPath:
-      plugin: "nav2_rotation_shim_controller::RotationShimController"
-
-      # RotationShim 参数
-      # 启用终点旋转
-      rotate_to_goal_heading: true
-      rotate_to_heading_angular_vel: 0.4
-      max_angular_accel: 0.8
-      # 滞回关系：进入阈值 > 退出阈值，避免反复进出旋转模式
-      angular_dist_threshold: 0.5
-      angular_disengage_threshold: 0.15
-      simulate_ahead_time: 1.0
-      max_cost_threshold: 254.0
-      rotate_to_heading_linear_vel: 0.0
-
-      # 内嵌 DWB 控制器
-      primary_controller: "dwb_core::DWBLocalPlanner"
+      # Keep final-heading control inside DWB. The RotationShim experiment
+      # repeatedly re-entered in-place rotation after wheel-slip changed XY.
+      plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
       min_vel_x: 0.0
       min_vel_y: 0.0
@@ -73,6 +62,8 @@ controller_server:
       max_vel_theta: 0.6
       min_speed_xy: 0.0
       max_speed_xy: 0.3
+      # Include zero and very small yaw commands so the terminal latch can
+      # settle instead of oscillating around a nonzero minimum speed.
       min_speed_theta: 0.0
       acc_lim_x: 0.8
       acc_lim_y: 0.0
@@ -86,19 +77,33 @@ controller_server:
       sim_time: 3.0
       linear_granularity: 0.05
       angular_granularity: 0.05
-      transform_tolerance: 0.1
+      transform_tolerance: 0.5
       xy_goal_tolerance: 0.40
       yaw_goal_tolerance: 0.25
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
       stateful: True
-      # DWB Critics
-      critics: ["Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      critics: ["PersistentRotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       BaseObstacle.scale: 0.02
       PathAlign.scale: 1.0
       GoalAlign.scale: 0.2
       PathDist.scale: 0.5
       GoalDist.scale: 2.0
+      PersistentRotateToGoal.class: "robonix_nav2_terminal::PersistentRotateToGoalCritic"
+      PersistentRotateToGoal.scale: 16.0
+      PersistentRotateToGoal.xy_enter_tolerance: 0.40
+      PersistentRotateToGoal.xy_exit_tolerance: 0.55
+      PersistentRotateToGoal.yaw_enter_tolerance: 0.25
+      PersistentRotateToGoal.yaw_exit_tolerance: 0.35
+      PersistentRotateToGoal.stopped_linear_velocity: 0.05
+      PersistentRotateToGoal.max_terminal_angular_velocity: 0.60
+      PersistentRotateToGoal.slowing_factor: 2.0
+      PersistentRotateToGoal.lookahead_time: 0.5
+      PersistentRotateToGoal.max_terminal_duration: 60.0
+      PersistentRotateToGoal.no_progress_timeout: 15.0
+      PersistentRotateToGoal.min_yaw_progress: 0.01
+      PersistentRotateToGoal.rotation_margin: 1.0
+
 
 bt_navigator:
   ros__parameters:
@@ -200,7 +205,7 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
         inflation_radius: 0.45
-        cost_scaling_factor: 10.0
+        cost_scaling_factor: 10
       always_send_full_costmap: true
 
 

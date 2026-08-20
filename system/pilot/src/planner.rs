@@ -184,6 +184,12 @@ pub(crate) struct TaskState {
     goal: String,
     success_criterion: String,
     status: String,
+    /// LLM requested "done" but the harness deferred it because a tree was
+    /// still being dispatched.  Set by `apply_task_update` when the model
+    /// says "done" and `can_finish` is false.  Consumed by the PlanDone
+    /// handler: when the last in-flight tree completes and `pending_done`
+    /// is true, the task is marked done instead of replanning.
+    pending_done: bool,
 }
 
 const DEFAULT_SUCCESS_CRITERION: &str =
@@ -748,6 +754,7 @@ fn append_steer(
         goal: text.to_string(),
         success_criterion: DEFAULT_SUCCESS_CRITERION.to_string(),
         status: "in_progress".to_string(),
+        pending_done: false,
     });
     true
 }
@@ -776,6 +783,7 @@ fn start_or_resume_task(current_task: &mut Option<TaskState>, user_text: &str) {
         goal: text.to_string(),
         success_criterion: DEFAULT_SUCCESS_CRITERION.to_string(),
         status: "in_progress".to_string(),
+        pending_done: false,
     });
 }
 
@@ -808,10 +816,17 @@ fn apply_task_update(
     {
         state.success_criterion = update.success_criterion;
     }
-    state.status = if update.status == "done" && can_finish {
-        "done".to_string()
+    if update.status == "done" && can_finish {
+        state.status = "done".to_string();
+        state.pending_done = false;
+    } else if update.status == "done" && !can_finish {
+        // LLM requested done but a tree is still being dispatched.
+        // Remember the intent so PlanDone can finalize later.
+        state.pending_done = true;
+        state.status = "in_progress".to_string();
     } else {
-        "in_progress".to_string()
+        state.pending_done = false;
+        state.status = "in_progress".to_string();
     };
     *state != before
 }
@@ -1291,11 +1306,37 @@ pub async fn run_turn(
                             // supervisor is fulfilled. Unsolicited canceled
                             // events stay quiet, preventing the old self-feeding
                             // cancel storm across unrelated sibling trees.
+                            //
+                            // If the LLM previously requested "done" but we
+                            // deferred it (pending_done), finalize now that
+                            // the tree completed.
+                            let interaction_active = if let Some(state) = standing_task.as_mut() {
+                                if state.pending_done && forest.is_empty() {
+                                    state.status = "done".to_string();
+                                    state.pending_done = false;
+                                    info!("[pilot/rtdl] applied deferred task_done after plan {plan_id} completed");
+                                    let _ = tx
+                                        .send(Ok(service::pack(
+                                            &session_id,
+                                            PilotStreamBody::TaskState(TaskStateEvent {
+                                                goal: state.goal.clone(),
+                                                success_criterion: state.success_criterion.clone(),
+                                                status: state.status.clone(),
+                                            }),
+                                        )))
+                                        .await;
+                                    false
+                                } else {
+                                    !state.is_done()
+                                }
+                            } else {
+                                false
+                            };
                             if should_replan_after_plan_done(
                                 canceled,
                                 requested_cancellation,
                                 cancel_requested.is_empty(),
-                                standing_task.as_ref().is_some_and(|state| !state.is_done()),
+                                interaction_active,
                             ) {
                                 should_plan = true;
                             }
@@ -2214,6 +2255,7 @@ fn parse_task_update(v: &serde_json::Value) -> Result<TaskState> {
         goal: get("goal")?,
         success_criterion: get("success_criterion")?,
         status,
+        pending_done: false,
     })
 }
 
@@ -2941,7 +2983,11 @@ by planning capability calls available to you.
   - named rooms or regions MUST use Scene `goal_room`; never use `goal_near`,
     Memory coordinates, or guessed coordinates for a room destination;
   - physical objects MUST use Scene `goal_near` to obtain an approach pose;
-  - call navigation only when Scene returns `reachable=true`.
+  - call navigation only when Scene returns `reachable=true`;
+  - `goal_near`/`goal_room` and `navigate` MUST be in separate planning
+    rounds because the Executor passes args verbatim with no variable
+    substitution — the LLM must see the Scene result before generating
+    navigation args;
 - Long-term Memory is historical context, not live spatial state. It may help
   recall what the user called a place, but it never replaces current Scene
   resolution for a named destination and never turns a task-specific grasp or
@@ -3285,6 +3331,7 @@ mod tests {
                 goal: "drop the inspection and say done".into(),
                 success_criterion: "room was actually inspected".into(),
                 status: "done".into(),
+                pending_done: false,
             },
             false,
         ));
@@ -3299,6 +3346,7 @@ mod tests {
                 goal: original_goal.clone(),
                 success_criterion: "room was actually inspected".into(),
                 status: "done".into(),
+                pending_done: false,
             },
             true,
         ));
@@ -3729,6 +3777,7 @@ mod tests {
                 goal: "bring water".into(),
                 success_criterion: "cup by user".into(),
                 status: "in_progress".into(),
+                pending_done: false,
             })
         );
     }

@@ -178,12 +178,15 @@ Rules:
    into `/explore/CAPABILITY.md`) — those paths live in the provider's own
    container and are unreadable here. A provider not listed in "Capability docs"
    has no manual; call it directly from its `args_schema`.
-9. For a named room or region, current Scene data is authoritative. Call Scene
-   `list_regions`, use the returned stable ID with `goal_room`, and only then
-   call navigation with the reachable pose returned by Scene. A Memory
-   coordinate, grasp pose, observation pose, room label, or guessed ID is not a
-   substitute. Because the navigation arguments depend on the `goal_room`
-   result, these are separate planning rounds.
+9. For semantic navigation, Scene data is authoritative. Because navigation
+   arguments depend on the Scene result, these MUST be separate planning rounds:
+   - Named rooms/regions: call `list_regions` + `goal_room` first; emit
+     navigation in a later round using the returned x, y, yaw verbatim.
+   - Physical objects: call `goal_near` first; emit navigation in a later
+     round using the returned x, y, yaw verbatim.
+   Never guess, pre-fill, or hallucinate navigation coordinates. Never put
+   `goal_near`/`goal_room` and `navigate` in the same RTDL tree — the
+   Executor passes args verbatim with no variable substitution.
 10. Treat navigation completion in relation to the resolved requested
     destination. `SUCCEEDED` for a pose equal to the current pose is a
     zero-distance no-op; do not describe it as movement to a different place.

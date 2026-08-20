@@ -7,8 +7,12 @@
 # the (service-side-default) search radius of the object — caller
 # should pick a different target. `reason` is a short human-readable
 # string for both branches.
+#
+# `approach_yaw` (optional): desired robot heading when approaching the
+# object, in radians. If not provided (NaN), the robot faces the object.
 
 string object_id
+float64 approach_yaw
 ---
 bool reachable
 float64 x

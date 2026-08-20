@@ -316,13 +316,22 @@ def object_goal(
     preferred_approach_yaw: float | None,
     minimum_standoff_m: float,
     footprint: RobotFootprint,
+    desired_yaw: float | None = None,
 ) -> tuple[float, float, float] | None:
-    """Find the nearest map cell whose real footprint can approach an object."""
+    """Find the nearest map cell whose real footprint can approach an object.
+    
+    Args:
+        desired_yaw: If provided, use this as the robot's heading instead of
+                    facing the object. Useful when the robot needs to face a
+                    specific direction (e.g., facing a table edge rather than
+                    an object on the table).
+    """
     width, height, resolution, origin_x, origin_y = _grid_metadata(grid_msg)
     grid = _grid_array(grid_msg, width=width, height=height)
-    # Preserve the existing goal_near policy: unexplored cells are allowed,
-    # but known occupied cells are not. Nav2 remains the final motion authority.
-    blocked = grid > 50
+    # A robot may only stop in cells that the map knows are traversable.
+    # OccupancyGrid represents unexplored cells as -1; accepting those cells
+    # can select the far side of a wall-mounted object.
+    blocked = (grid < 0) | (grid > 50)
     target_gx = math.floor((target_x - origin_x) / resolution)
     target_gy = math.floor((target_y - origin_y) / resolution)
     max_ring = max(
@@ -331,7 +340,11 @@ def object_goal(
         abs(target_gx - (width - 1)),
         abs(target_gy - (height - 1)),
     )
-    minimum_standoff_sq = minimum_standoff_m**2
+    # Ensure a minimum safety margin even if minimum_standoff_m is very small.
+    # This prevents returning the object's own coordinates when bbox is zero.
+    _MINIMUM_SAFETY_MARGIN_M = 0.3  # 30cm minimum safety margin
+    effective_standoff_m = max(minimum_standoff_m, _MINIMUM_SAFETY_MARGIN_M)
+    minimum_standoff_sq = effective_standoff_m**2
     for ring in range(max_ring + 1):
         candidates: list[tuple[float, float, float, float]] = []
         for gx, gy in _ring_cells(target_gx, target_gy, ring):
@@ -342,12 +355,13 @@ def object_goal(
             distance_sq = (x - target_x) ** 2 + (y - target_y) ** 2
             if distance_sq + 1e-12 < minimum_standoff_sq:
                 continue
-            yaw = math.atan2(target_y - y, target_x - x)
+            # Calculate approach angle for ranking
+            approach_angle = math.atan2(target_y - y, target_x - x)
             angle_error = (
                 abs(
                     math.atan2(
-                        math.sin(yaw - preferred_approach_yaw),
-                        math.cos(yaw - preferred_approach_yaw),
+                        math.sin(approach_angle - preferred_approach_yaw),
+                        math.cos(approach_angle - preferred_approach_yaw),
                     )
                 )
                 if preferred_approach_yaw is not None
@@ -355,7 +369,11 @@ def object_goal(
             )
             candidates.append((distance_sq, angle_error, x, y))
         for _distance_sq, _angle_error, x, y in sorted(candidates):
-            yaw = math.atan2(target_y - y, target_x - x)
+            # Use desired_yaw if provided, otherwise face the object
+            if desired_yaw is not None and math.isfinite(desired_yaw):
+                yaw = desired_yaw
+            else:
+                yaw = math.atan2(target_y - y, target_x - x)
             candidate = transformed_footprint(footprint, x, y, yaw)
             if _footprint_clear(
                 blocked,
@@ -366,5 +384,14 @@ def object_goal(
                 origin_y=origin_y,
                 polygon=candidate,
             ):
+                # Debug logging
+                import logging
+                log = logging.getLogger("goal-planner")
+                distance = ((x - target_x) ** 2 + (y - target_y) ** 2) ** 0.5
+                log.info(
+                    "object_goal: target=(%.3f, %.3f) result=(%.3f, %.3f) "
+                    "distance=%.3f minimum_standoff=%.3f",
+                    target_x, target_y, x, y, distance, minimum_standoff_m,
+                )
                 return x, y, yaw
     return None
