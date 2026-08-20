@@ -1,0 +1,192 @@
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 5.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.5
+    tf_buffer_duration: 0.5  # seconds
+
+    
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 5.0
+    # min_x_velocity_threshold: 0.01
+    # min_y_velocity_threshold: 0.01
+    # min_theta_velocity_threshold: 0.01
+    failure_tolerance: 0.5
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    controller_plugins: ["FollowPath"]
+
+    # Progress checker parameters
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.1
+      movement_time_allowance: 30.0
+    # Goal checker parameters
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.50
+      yaw_goal_tolerance: 0.50
+      stateful: true
+    # DWB parameters
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: True
+      min_vel_x: 0.00
+      min_vel_y: 0.0
+      max_vel_x: 0.22
+      max_vel_y: 0.0
+      max_vel_theta: 0.5
+      # min_vel_theta: 0.05
+      min_speed_xy: 0.0
+      max_speed_xy: 0.4
+      min_speed_theta: 0.05
+      # Add high threshold velocity for turtlebot 3 issue.
+      # https://github.com/ROBOTIS-GIT/turtlebot3_simulations/issues/75
+      acc_lim_x: 0.5
+      acc_lim_y: 0.0
+      acc_lim_theta: 1.0
+      decel_lim_x: -0.5
+      decel_lim_y: -0.0
+      decel_lim_theta: -1.0
+      vx_samples: 20
+      vy_samples: 5
+      vtheta_samples: 120
+      sim_time: 3.0
+      linear_granularity: 0.05
+      angular_granularity: 0.05
+      transform_tolerance: 0.5
+      xy_goal_tolerance: 0.50
+      yaw_goal_tolerance: 0.50
+      # trans_stopped_velocity: 0.15
+      short_circuit_trajectory_evaluation: True
+      stateful: True
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      BaseObstacle.scale: 0.05
+      PathAlign.scale: 1.0
+      # PathAlign.forward_point_distance: 0.1
+      # PathAlign.forward_preference: true
+      GoalAlign.scale: 0.2
+      # GoalAlign.forward_point_distance: 0.1
+      # GoalAlign.forward_preference: true
+      PathDist.scale: 0.5
+      GoalDist.scale: 2.0
+      # RotateToGoal switches DWB into in-place final rotation when within this
+      # XY radius of the goal. A large 4-wheel base drifts in XY *while* rotating
+      # (kinematic wheel-scrub — independent of rotation speed); if that drift
+      # exceeds this radius DWB drops out of rotation and re-translates, causing
+      # the rotate→drift→re-translate oscillation at the goal. Set it WIDER than
+      # the goal-checker xy tolerance (0.50) so DWB keeps rotating through the
+      # drift instead of bouncing back (stateful goal-checker already latches
+      # "xy reached", so the final pose error stays bounded by the drift).
+      # TUNE on the real base: lower bound = measured per-rotation drift radius;
+      # too large and the robot starts rotating to final yaw too early (well
+      # before reaching the goal). 0.80 is a starting point for ~0.3 m drift.
+      RotateToGoal.xy_goal_tolerance: 1.50  # commit to in-place final rotation early; never re-trigger goto-xy near goal
+      RotateToGoal.yaw_goal_tolerance: 0.50
+      RotateToGoal.scale: 1.0
+      RotateToGoal.slowing_factor: 1.0
+      RotateToGoal.lookahead_time: 0.5
+    
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    default_bt_xml_filename: ""
+    tf_buffer_duration: 0.5
+
+recoveries_server:
+  ros__parameters:
+    costmap_topic: global_costmap/costmap
+    footprint_topic: global_costmap/published_footprint
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 10.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      footprint: "[ [0.34, 0.23], [0.34, -0.23], [-0.34, -0.23], [-0.34, 0.23] ]"
+      footprint_padding: 0.13
+      # robot_radius: 0.32
+      
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scanner/scan
+          max_obstacle_height: 2.0
+          marking: true
+          clearing: true
+          qos:
+            reliability: best_effort
+            durability: volatile
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.40
+        cost_scaling_factor: 2.2
+
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      global_frame: map          # usually 'map'
+      robot_base_frame: base_link
+      # robot_radius: 0.32
+      footprint: "[ [0.34, 0.23], [0.34, -0.23], [-0.34, -0.23], [-0.34, 0.23] ]"
+      footprint_padding: 0.13
+      update_frequency: 1.0      # update rate (Hz); may be lower than local_costmap
+      publish_frequency: 1.0     # publish rate (Hz)
+      resolution: 0.05           # resolution; match the map
+
+      rolling_window: false      # global costmap: keep rolling_window false
+      track_unknown_space: true  # treat unknown space as plan:able
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        enabled: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scanner/scan
+          max_obstacle_height: 2.0
+          marking: true
+          clearing: true
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.60
+        cost_scaling_factor: 2.2
+
+
+lifecycle_manager:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+    node_names:
+      - planner_server
+      - controller_server
+      - bt_navigator
+      - recoveries_server

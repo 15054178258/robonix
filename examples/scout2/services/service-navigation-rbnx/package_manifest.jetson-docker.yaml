@@ -1,0 +1,30 @@
+# nav2_wrapper_rbnx — deployment target: jetson-docker.
+# Same package + capabilities + config as the default package_manifest.yaml
+# (see it for the full config schema). Only build/start differ:
+#   build → RBNX_BUILD_TARGET=jetson-docker (see scripts/build.sh)
+#   start → ROBONIX_NAV2_FORCE=docker (see scripts/start.sh)
+# Select from a deploy entry's `manifest:` field.
+manifestVersion: 1
+
+package:
+  name: com.robonix.service.nav2
+  version: 0.1.0
+  vendor: robonix
+  description: Nav2 service wrapper (jetson-docker target).
+  license: Apache-2.0
+
+capability_id: nav2
+
+build: RBNX_BUILD_TARGET=jetson-docker bash scripts/build.sh
+start: ROBONIX_NAV2_FORCE=docker bash scripts/start.sh
+
+stop: ROBONIX_NAV2_FORCE=docker bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/service/navigation/driver
+  - name: robonix/service/navigation/navigate
+  - name: robonix/service/navigation/navigate/status
+  - name: robonix/service/navigation/navigate/cancel
+  - name: robonix/service/navigation/adjust_speed
+  - name: robonix/service/navigation/set_speed_limit
+  - name: robonix/service/navigation/get_speed_limit

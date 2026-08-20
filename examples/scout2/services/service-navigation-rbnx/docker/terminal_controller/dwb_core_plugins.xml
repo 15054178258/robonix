@@ -1,0 +1,7 @@
+<library path="robonix_nav2_dwb_critic">
+  <class name="robonix_nav2_terminal::PersistentRotateToGoalCritic"
+         type="robonix_nav2_terminal::PersistentRotateToGoalCritic"
+         base_class_type="dwb_core::TrajectoryCritic">
+    <description>Bounded pure rotation after entering the terminal XY window.</description>
+  </class>
+</library>

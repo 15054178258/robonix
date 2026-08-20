@@ -1,0 +1,14 @@
+<library path="robonix_nav2_goal_checker">
+  <class name="robonix_nav2_terminal::PersistentGoalChecker"
+         type="robonix_nav2_terminal::PersistentGoalChecker"
+         base_class_type="nav2_core::GoalChecker">
+    <description>XY/yaw latch that survives same-goal replanning.</description>
+  </class>
+</library>
+<library path="robonix_nav2_goal_aware_planner">
+  <class name="robonix_nav2_terminal::GoalAwareNavfnPlanner"
+         type="robonix_nav2_terminal::GoalAwareNavfnPlanner"
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>Prefer known-space paths and reject unknown exposure above a bounded fallback budget.</description>
+  </class>
+</library>

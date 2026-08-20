@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+SPDX-License-Identifier: MulanPSL-2.0
+
+FastRTPS profile that disables the SHM transport.
+
+Why: with host networking and host IPC, the sim and mapping containers
+share /dev/shm. But FastRTPS's SHM transport uses port-hash-named shm
+files locked by the writer participant's GUID; cross-container data
+transfer through those locks does not work reliably (discovery goes
+through fine over UDP, but `topic echo` / `topic hz` time out even
+though both endpoints see each other).
+
+Forcing UDPv4-only for both sides removes the SHM path entirely;
+FastRTPS still uses UDP unicast for data delivery, which is fast enough
+on loopback / host-net and avoids the SHM-namespace mess.
+
+Do NOT pin this to the loopback interface (interfaceWhiteList /
+metatraffic localhost): the sim announces its topic locators on the
+host's primary interface, so a loopback-only nav2 participant stops
+discovering /odom and /scan. Keep the transport on all interfaces.
+
+Note on bringup reliability: with many DDS participants on the shared
+host network, the default net.core.rmem_max (208 KB) can overflow under
+the endpoint-discovery burst and drop nav2's lifecycle change_state
+replies, stalling bringup. The robust fix is to raise the host's UDP
+buffers (see the README "DDS / sysctl tuning" note); this profile keeps
+the transport simple and portable.
+
+Apply via FASTRTPS_DEFAULT_PROFILES_FILE pointing to this file.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_only</transport_id>
+      <type>UDPv4</type>
+      <!-- Ask for large socket buffers. The OS caps these at rmem_max, so
+           this only helps where rmem_max is tuned; harmless otherwise. -->
+      <sendBufferSize>4194304</sendBufferSize>
+      <receiveBufferSize>4194304</receiveBufferSize>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="participant_no_shm" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>udp_only</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

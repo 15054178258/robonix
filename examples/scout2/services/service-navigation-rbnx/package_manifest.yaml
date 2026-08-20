@@ -1,0 +1,47 @@
+# Nav2 service wrapper. Robot-specific configuration lives in the deploy repo.
+#
+# Wraps `nav2_bringup` (system-installed via apt: `ros-humble-nav2-bringup`).
+# Nav2 itself is supplied by the selected runtime target.
+#
+# Owns the `robonix/service/navigation/*` namespace.
+#
+# Lifecycle: start.sh launches the atlas bridge ONLY (no nav2 spawn).
+# `rbnx boot` then calls `Driver(CMD_INIT, config_json)` — the handler
+# spawns `ros2 launch nav2_bringup navigation_launch.py params_file:=…`,
+# waits for the `navigate_to_pose` action server to come up, then
+# declares navigate / status / cancel on atlas.
+#
+# Capability surface (mode = abstract pattern, transport = wire):
+#   service/navigation/driver    mode=rpc  transport=gRPC  Driver(INIT)
+#   service/navigation/navigate  mode=rpc  transport=gRPC+MCP  Navigate(PoseStamped)
+#   service/navigation/navigate/status    mode=rpc  transport=gRPC+MCP  GetNavigationStatus(run_id)
+#   service/navigation/navigate/cancel    mode=rpc  transport=gRPC+MCP  CancelNavigation(run_id)
+#   service/navigation/adjust_speed       mode=rpc  transport=gRPC+MCP
+#   service/navigation/set_speed_limit    mode=rpc  transport=gRPC+MCP
+#   service/navigation/get_speed_limit    mode=rpc  transport=gRPC+MCP
+#
+# Config is documented in config.spec. params_file is required and is resolved
+# relative to the robot deployment manifest.
+manifestVersion: 1
+
+package:
+  name: robonix.service.navigation
+  version: 0.1.0
+  description: Nav2 service wrapper exposing service/navigation/* over gRPC.
+  tags: [service, navigation, nav2, ros2]
+  maintainers: [wheatfox <wheatfox17@icloud.com>]
+  license: Apache-2.0
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+stop: bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/service/navigation/driver
+  - name: robonix/service/navigation/navigate
+  - name: robonix/service/navigation/navigate/status
+  - name: robonix/service/navigation/navigate/cancel
+  - name: robonix/service/navigation/adjust_speed
+  - name: robonix/service/navigation/set_speed_limit
+  - name: robonix/service/navigation/get_speed_limit
