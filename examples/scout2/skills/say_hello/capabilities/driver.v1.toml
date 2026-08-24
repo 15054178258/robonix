@@ -1,0 +1,9 @@
+# robonix/skill/say_hello/driver — lifecycle driver capability.
+[contract]
+id      = "robonix/skill/say_hello/driver"
+version = "1"
+kind    = "skill"
+idl     = "lifecycle/srv/Driver.srv"
+
+[mode]
+type = "rpc"

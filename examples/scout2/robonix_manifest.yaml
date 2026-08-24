@@ -57,7 +57,9 @@ primitive:
     branch: main
     config:
       mic_device: "hw:1,0"
-      speaker_device: "hw:0,3"
+      speaker_device: "plughw:0,3"
+      speaker_sample_rate: 16000
+      speaker_channels: 1
   - name: robot_description
     path: ./primitives/primitive-robot-description-rbnx
     manifest: package_manifest.native.yaml
@@ -104,14 +106,14 @@ service:
     config:
       backend: sqlite
 
-  # # ── Speech ───────────────────────────────────────────────────────────
-  # - name: speech
-  #   path: ${ROBONIX_SOURCE_PATH}/services/speech
-  #   config:
-  #     disable_whisper: true
-  #     funasr_device: cuda
-  #     tts_voice: zh-CN-XiaoxiaoNeural
-  #     default_speaker_provider_id: audio_driver
+  # ── Speech ───────────────────────────────────────────────────────────
+  - name: speech
+    path: ${ROBONIX_SOURCE_PATH}/services/speech
+    config:
+      disable_whisper: true
+      funasr_device: cuda
+      tts_voice: zh-CN-XiaoxiaoNeural
+      default_speaker_provider_id: audio_driver
 
   # # ── Voiceprint ───────────────────────────────────────────────────────
   # - name: voiceprint
@@ -152,7 +154,7 @@ service:
       action_wait_s: 240.0
       guard_terminal_xy_m: 0.20
       dynamic_speed:
-        max_linear_speed_mps: 0.3
+        max_linear_speed_mps: 0.5
         default_percentage: 75
         step_percentage: 20
         min_percentage: 20
@@ -183,4 +185,7 @@ skill:
     path: ./skills/move
   - name: patrol
     path: ./skills/patrol
+    config: {}
+  - name: say_hello
+    path: ./skills/say_hello
     config: {}

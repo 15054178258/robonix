@@ -1,0 +1,12 @@
+[contract]
+id = "robonix/skill/say_hello/say"
+version = "1"
+kind = "skill"
+idl = "say_hello/srv/SayHello.srv"
+description = "Speak custom text through the robot speaker. Uses 'text' field if provided, otherwise falls back to greeting with 'name'."
+
+[mode]
+type = "rpc"
+
+[semantics]
+user_invocable = true
