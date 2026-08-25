@@ -1,0 +1,21 @@
+schema_version: 1
+readonly_inputs:
+  sport_mode_state: [/sportmodestate, /lf/sportmodestate]
+  low_state: [/lowstate]
+  lidar_cloud: [/utlidar/cloud]
+  wireless_controller: [/wirelesscontroller]
+standard_outputs:
+  odom: /odom
+  imu: /imu/data
+  lidar_cloud: /scanner/cloud
+  lidar_scan: /scanner/scan
+  camera_image: /camera/color/image_raw
+  camera_info: /camera/color/camera_info
+  map: /map
+frames:
+  map: map
+  odom: odom
+  base: base_link
+  imu: imu
+  lidar: utlidar_lidar
+  camera: front_camera

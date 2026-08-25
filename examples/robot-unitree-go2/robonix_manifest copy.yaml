@@ -1,0 +1,299 @@
+manifestVersion: 1
+name: robonix-go2-deploy
+
+catalog:
+  name: robonix.robot.unitree.go2
+  version: 0.1.0
+  description: Safe Robonix deployment for Unitree Go2 with mapping, semantic navigation and read-only UI.
+  license: Apache-2.0 AND BSD-3-Clause AND MIT AND (EPL-2.0 OR EDL-1.0)
+  tags: [robot, deploy, unitree, go2, quadruped, lidar, camera, imu, mapping, navigation, speech]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+env:
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  # Derived by build.sh/start.sh from the complete motion gate. Local config
+  # cannot point a motion-disabled deployment back at canonical /cmd_vel.
+  ROBONIX_VELOCITY_OUTPUT_TOPIC: "${ROBONIX_VELOCITY_OUTPUT_TOPIC}"
+  ROBONIX_PROVIDER_BIND_HOST: 127.0.0.1
+  ROBONIX_ADVERTISE_HOST: 127.0.0.1
+  SPEECH_BIND_ADDR: 127.0.0.1
+  MAPPING_ENABLE_VIZ: "false"
+  # Mapping's operator Save/Load UI is required during supervised map capture,
+  # but must never listen on the Go2 control network.
+  MAPPING_WEBUI_HOST: 127.0.0.1
+  ROBONIX_SCENE_ROS_DISTRO: humble
+  SCENE_WEB_HOST: 127.0.0.1
+  # The workstation has an NVIDIA display GPU, but its Docker daemon has no
+  # usable NVIDIA CDI/runtime integration.  Scene's host-side nvidia-smi probe
+  # would otherwise add `--gpus all` and Docker would abort before the CPU
+  # implementation can start.  Keep this deployment deterministic and let the
+  # perception pipeline select its supported CPU backend explicitly.
+  ROBONIX_FORCE_CPU: "1"
+  SCENE_CG_FORCE_CPU: "1"
+  SCENE_MAP_ID: "${GO2_MAP_ID}"
+  # Scene's Docker launcher mounts this host directory at /data/robonix.
+  # Keep object memory, graph cache and annotations on their in-container
+  # defaults so every item is persisted by that one audited mount.
+  SCENE_DATA_DIR: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/scene
+  MAPPING_MAPS_DIR: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/maps
+  SPEECH_BACKEND: "${SPEECH_BACKEND}"
+  # Keep all model/runtime caches inside this ignored deployment checkout.
+  # Speech/Scene must never fall back to a global home-directory cache whose
+  # contents are absent from the deployable artifact.
+  XDG_CACHE_HOME: ${ROBONIX_DEPLOY_DIR}/.cache/xdg
+  MODELSCOPE_CACHE: ${ROBONIX_DEPLOY_DIR}/.cache/modelscope
+  MODELSCOPE_CREDENTIALS_PATH: ${ROBONIX_DEPLOY_DIR}/.cache/modelscope/credentials
+  HF_HOME: ${ROBONIX_DEPLOY_DIR}/.cache/huggingface
+  TORCH_HOME: ${ROBONIX_DEPLOY_DIR}/.cache/torch
+
+system:
+  atlas: {listen: 127.0.0.1:50051, log: info}
+  executor: {listen: 127.0.0.1:50061, log: info}
+  pilot:
+    listen: 127.0.0.1:50071
+    log: info
+    vlm:
+      upstream: ${VLM_BASE_URL}
+      api_key: ${VLM_API_KEY}
+      model: ${VLM_MODEL}
+      api_format: openai
+  liaison: {listen: 127.0.0.1:50081, log: info}
+  soma:
+    listen: 127.0.0.1:50091
+    provider_id: soma
+    robot_yaml: ${ROBONIX_DEPLOY_DIR}/soma.yaml
+    log: info
+  scene:
+    log: info
+    # Scene's semantic map/annotation UI is an operator surface. Keep it on
+    # loopback even while the Go2 DDS interface is attached.
+    web_host: 127.0.0.1
+    web_port: 50107
+    # Keep observations absent: Scene's reconciler discovers primitives and
+    # mapping outputs after their lifecycle providers come online.
+
+primitive:
+  - name: go2_chassis
+    path: ${ROBONIX_DEPLOY_DIR}/packages/go2_chassis
+    config:
+      state_topic: /sportmodestate
+      state_fallback_topic: /lf/sportmodestate
+      twist_in_topic: /cmd_vel
+      odom_topic: /odom
+      # The generic manifest remains on SportModeState odometry. Corrected
+      # workstation renderers explicitly select external_verified and route
+      # this private input to the chassis; never point it back at /odom.
+      odom_source: sport_state
+      external_odom_topic: /robonix/time_corrected/raw/utlidar/robot_odom
+      publish_odom_tf: true
+      imu_topic: /imu/data
+      odom_frame: odom
+      base_frame: base_link
+      imu_frame: imu
+      velocity_frame: odom
+      network_interface: ${GO2_NETWORK_INTERFACE}
+      allow_motion: ${GO2_ALLOW_MOTION}
+      operator_present: ${GO2_OPERATOR_PRESENT}
+      safety_ack: ${GO2_SAFETY_ACK}
+      # Impossible sentinel. Only GO2_ALLOWED_MODES from a completed read-only
+      # audit may replace it inside the fail-closed provider at runtime.
+      allowed_modes: [255]
+      max_linear_x_mps: 0.25
+      max_linear_y_mps: 0.0
+      max_angular_z_rps: 0.40
+      max_linear_accel_mps2: 0.30
+      max_angular_accel_rps2: 0.80
+      command_timeout_s: 0.25
+      state_timeout_s: 0.20
+      max_source_stamp_age_s: 0.20
+      max_source_stamp_future_skew_s: 0.05
+      zero_preamble_s: 0.50
+
+  - name: go2_sensors
+    path: ${ROBONIX_DEPLOY_DIR}/packages/go2_sensors
+    config:
+      # local owns the relay and camera publisher processes on this host.
+      # external only waits for and registers the standardized topics
+      # published by the reviewed NX read-only profile; it spawns no sensor
+      # publisher and therefore avoids duplicate camera/lidar writers.
+      source_mode: ${GO2_SENSOR_SOURCE_MODE}
+      network_interface: ${GO2_NETWORK_INTERFACE}
+      lidar_input_topic: /utlidar/cloud
+      lidar_output_topic: /scanner/cloud
+      imu_input_topic: /imu/data
+      imu_output_topic: /scanner/imu
+      camera_topic: /camera/color/image_raw
+      camera_info_topic: /camera/color/camera_info
+      camera_status_topic: /go2/sensors/status
+      camera_frame: front_camera
+      camera_fps: 5.0
+
+  - name: robot_description
+    path: ${ROBONIX_DEPLOY_DIR}/packages/go2_description
+
+  - name: audio_client_bridge
+    path: ${ROBONIX_SOURCE_PATH}/examples/webots/primitives/audio_client_bridge
+    config:
+      transport: reverse
+      listen_host: 127.0.0.1
+      listen_port: 60002
+
+service:
+  - name: mapping
+    # Gitlink-pinned until the upstream PR is merged. This avoids rbnx's
+    # mutable URL cache, which does not validate URL, branch, or source HEAD.
+    path: ${ROBONIX_DEPLOY_DIR}/third_party/service-map-rbnx
+    config:
+      algo: rtabmap
+      base_frame: base_link
+      odom_frame: odom
+      use_sim_time: false
+      webui_host: 127.0.0.1
+      webui_port: 8091
+      map_id: "${GO2_MAP_ID}"
+      map_mode: "${GO2_MAP_MODE}"
+      # The hardware PointCloud2 audit found a monotonic per-point `time`
+      # channel spanning about 63 ms in every UniLiDAR packet.  Use the
+      # external odom TF to compensate that interval before mapping.
+      deskew_lidar: true
+      # The MID-360 packet pattern is sparse and non-repetitive. Align a
+      # bounded four-frame deskewed window in odom, then project it to a
+      # 0.5-degree LaserScan so unobserved bearings stay unknown instead of
+      # producing radial free-space spokes.
+      dense_scan_2d: true
+      # Refine only consecutive graph edges against the conditioned scan.
+      # Spatial proximity remains disabled so similar corridor sections
+      # cannot create unrelated closures.
+      dense_scan_refine_neighbors: true
+      params_file: config/rtabmap_params.yaml
+      # These deployment-local values intentionally override the conservative
+      # raw-cloud defaults in rtabmap_params.yaml for this opt-in chain.
+      rtabmap_params:
+        Reg/Strategy: 1
+        Reg/Force3DoF: true
+        RGBD/NeighborLinkRefining: true
+        RGBD/ProximityBySpace: false
+        RGBD/ProximityPathMaxNeighbors: 0
+        Icp/PointToPlane: true
+        Icp/PointToPlaneK: 5
+        Icp/PointToPlaneMinComplexity: 0.02
+        Icp/PointToPlaneLowComplexityStrategy: 1
+        Icp/CorrespondenceRatio: 0.20
+        Icp/MaxCorrespondenceDistance: 0.15
+        Icp/MaxTranslation: 0.10
+        Icp/MaxRotation: 0.10
+        Icp/RangeMin: 0.492
+        Icp/RangeMax: 6.0
+      rtabmap_inputs: [lidar, imu, odom]
+      sensor_providers:
+        lidar3d: go2_sensors
+        imu: go2_sensors
+        odom: go2_chassis
+
+  - name: speech
+    path: ${ROBONIX_SOURCE_PATH}/services/speech
+    config:
+      speech_backend: "${SPEECH_BACKEND}"
+      disable_whisper: true
+      # Pin the already warmed deployment-local model directory. A symbolic
+      # hub name may silently attempt network and user-home writes at runtime.
+      funasr_model: "${GO2_FUNASR_MODEL_PATH}"
+      funasr_device: auto
+      tts_voice: zh-CN-XiaoxiaoNeural
+      default_speaker_provider_id: audio_client_bridge
+      wake_words: ["罗伯尼克斯", "罗伯特"]
+
+  - name: nav2
+    path: ${ROBONIX_DEPLOY_DIR}/third_party/service-navigation-rbnx
+    config:
+      params_file: config/nav2_params_go2.yaml
+      bt_xml_file: config/navigate.xml
+      bt_through_poses_xml_file: config/navigate_through_poses.xml
+      velocity_output_topic: "${ROBONIX_VELOCITY_OUTPUT_TOPIC}"
+      use_sim_time: false
+      action_wait_s: 90.0
+      provider_ids:
+        map: mapping
+        odom: go2_chassis
+        # Pin the optional LaserScan lookup too. This provider intentionally
+        # has no native scan, so Navigation projects its pinned lidar3d cloud
+        # instead of accidentally selecting another robot's scan provider.
+        scan: go2_sensors
+        scan_cloud: go2_sensors
+      scan_projection:
+        enabled: true
+        target_frame: base_link
+        # base_link is the body-centred URDF frame. Retain low obstacles below
+        # it while rejecting most floor returns and overhead clearance.
+        min_height_m: -0.25
+        max_height_m: 0.50
+        range_max_m: 12.0
+        # Soma already supplies a conservative circumscribed footprint. A
+        # large radial margin creates a dangerous close-obstacle blind annulus.
+        self_filter_margin_m: 0.02
+        transform_tolerance_s: 0.20
+        # Same evidence gate as Mapping: projection works without deskewing.
+        deskewing: false
+        deskew_fixed_frame: odom
+      # Must not exceed the SimpleGoalChecker XY window in Nav2 params.
+      guard_terminal_xy_m: 0.20
+      guard_terminal_timeout_s: 12.0
+      # Slow but measured Go2 yaw progress must not be mistaken for a stuck
+      # terminal turn.  The cumulative rotation cap remains independent.
+      guard_no_progress_s: 6.0
+      guard_global_spin_timeout_s: 18.0
+      guard_global_spin_limit_rad: 4.20
+
+  - name: go2_dashboard
+    path: ${ROBONIX_DEPLOY_DIR}/packages/go2_dashboard
+    config:
+      host: 127.0.0.1
+      port: ${GO2_DASHBOARD_PORT}
+      camera_topic: /camera/color/image_raw
+      d435i_color_topic: /go2/d435i/color/image_raw
+      d435i_depth_topic: /go2/d435i/aligned_depth_to_color/image_raw
+      d435i_camera_info_topic: /go2/d435i/color/camera_info
+      cloud_topic: /scanner/cloud
+      scan_topic: /scanner/scan
+      map_topic: /map
+      pose_topic: /robonix/map/pose
+      odom_topic: /odom
+      nav_status_topic: /navigate_to_pose/_action/status
+      initial_pose_topic: /initialpose
+      map_lifecycle_topic: /robonix/map/lifecycle
+      initial_pose_maps_dir: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/maps
+      # Automatic restore remains off because the saved operator seed is valid
+      # only when the robot is physically returned to the same marked start.
+      # The dashboard offers an exact map_id+generation-confirmed restore.
+      initial_pose_auto_restore: false
+      map_frame: map
+      base_frame: base_link
+      # The browser route remains inert unless the local .env value is exactly
+      # 1. It only delegates validated loopback audio to Liaison; all hardware
+      # motion gates remain independent and unchanged.
+      browser_voice_enabled: ${GO2_DASHBOARD_BROWSER_VOICE_ENABLED}
+      liaison_endpoint: 127.0.0.1:50081
+      audio_bridge_url: ws://127.0.0.1:60002/client
+      browser_mic_provider: audio_client_bridge
+
+skill:
+  - name: semantic_navigation
+    path: ${ROBONIX_DEPLOY_DIR}/packages/semantic_navigation
+    config:
+      landmarks_file: ${SEMANTIC_LANDMARKS_FILE}
+      expected_map_id: "${GO2_MAP_ID}"
+      navigation_provider_id: nav2
+      mapping_provider_id: mapping
+      require_verified: true
+      rpc_timeout_s: 10.0
+      lifecycle_wait_s: 10.0
+      # Retries bridge Navigation's async goal-handle acceptance race while a
+      # lifecycle change is forcing an unfinished semantic run to cancel.
+      cancel_retry_s: 3.0
+      # Display metadata only. The skill validates a literal loopback IP,
+      # exact path, no credentials/query/redirects, and isolates failures on a
+      # daemon worker; this endpoint cannot create navigation or ROS commands.
+      status_endpoint: "http://127.0.0.1:${GO2_DASHBOARD_PORT}/api/semantic-task"
+      status_timeout_s: 0.5
+      nav_status_poll_s: 0.5

@@ -1,0 +1,5 @@
+---
+bool ok
+string url
+string detail
+string status_json

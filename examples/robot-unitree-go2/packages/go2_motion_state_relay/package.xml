@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_motion_state_relay</name>
+  <version>0.1.0</version>
+  <description>Fail-closed per-message publisher-GID guard for corrected Go2 motion state.</description>
+  <maintainer email="zxq13204030517@163.com">Origamii520</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>unitree_go</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

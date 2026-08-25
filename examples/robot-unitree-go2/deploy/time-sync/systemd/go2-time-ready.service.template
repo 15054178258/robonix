@@ -1,0 +1,22 @@
+# INACTIVE TEMPLATE: installation section is omitted by design.
+[Unit]
+Description=Verify chrony is locked to the reviewed Go2 refclock
+After=go2-clock-ref.service
+Requires=go2-clock-ref.service
+ConditionPathExists=/etc/robonix-go2/ENABLE_GO2_REFCLOCK
+ConditionPathExists=/var/lib/robonix-go2/time-evidence/go2-clock-ref-approval.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/chronyc waitsync 120 0.05 100 1
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectClock=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallFilter=@system-service
+SystemCallFilter=~@clock @mount @privileged

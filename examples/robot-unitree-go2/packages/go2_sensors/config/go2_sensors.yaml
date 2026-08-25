@@ -1,0 +1,52 @@
+go2_sensor_relay:
+  ros__parameters:
+    lidar:
+      input_topic: /utlidar/cloud
+      output_topic: /scanner/cloud
+      # A 15 Hz navigation cloud should normally be tens of milliseconds old.
+      # Drop delayed/replayed data before it can reach mapping or a costmap.
+      max_stamp_age_seconds: 0.50
+      max_future_stamp_offset_seconds: 0.05
+    imu:
+      input_topic: /imu/data
+      output_topic: /sensors/imu/data
+      relay_enabled: true
+      frame_override: ""
+      # IMU is substantially faster than lidar, so use a tighter age bound.
+      max_stamp_age_seconds: 0.20
+      max_future_stamp_offset_seconds: 0.05
+    status:
+      topic: /go2/sensors/status
+      stale_timeout_seconds: 1.0
+      startup_grace_seconds: 5.0
+      publish_period_seconds: 1.0
+
+go2_camera_bridge:
+  ros__parameters:
+    camera:
+      frame_id: front_camera
+      image_topic: /camera/color/image_raw
+      camera_info_topic: /camera/color/camera_info
+      max_jpeg_bytes: 4194304
+      max_width: 4096
+      max_height: 4096
+      read_timeout_ms: 1500
+      reconnect_delay_ms: 1000
+      max_frame_age_ms: 2000
+    status:
+      topic: /go2/sensors/status
+      stale_timeout_seconds: 2.0
+      startup_grace_seconds: 5.0
+      quality_window_seconds: 10.0
+      min_valid_rate_hz: 1.0
+      max_error_ratio: 0.20
+      min_quality_samples: 5
+      publish_period_seconds: 1.0
+    # K[0] == 0 deliberately means "uncalibrated" in sensor_msgs/CameraInfo.
+    # Replace d/k/r/p only with calibration measured for this physical Go2.
+    calibration:
+      distortion_model: plumb_bob
+      d: [0.0, 0.0, 0.0, 0.0, 0.0]
+      k: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+      p: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

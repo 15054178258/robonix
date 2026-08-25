@@ -1,0 +1,20 @@
+Robonix Unitree Go2 deployment
+Copyright 2026 the contributors
+
+The Go2 URDF and DAE model assets under packages/go2_description are derived
+from unitreerobotics/unitree_ros, commit
+d96d8f63ae17a7108d4f7229c00ef875ba7129c9. They remain subject to Unitree
+Robotics' BSD 3-Clause License, reproduced as
+packages/go2_description/LICENSE.unitree.
+
+The pinned unitree_sdk2 and unitree_ros2 submodules remain subject to their
+upstream BSD-3-Clause licenses. The SDK-only chassis and camera daemon install
+images also contain Unitree SDK2's bundled CycloneDDS/CycloneDDS-CXX runtime
+(EPL-2.0 OR EDL-1.0), RapidJSON (MIT plus its bundled notices), and Iceoryx
+(Apache-2.0). Their complete upstream license texts are retained in the pinned
+submodule and copied into each installed daemon image under
+share/licenses/unitree_sdk2/. See THIRD_PARTY.md for exact paths.
+
+The base model geometry is unchanged. This repository adds zero-offset
+`base_link` and `utlidar_lidar` alias joints so Robonix/Nav2 and the official
+unitree_ros2 topic frame share one connected TF tree.

@@ -1,0 +1,9 @@
+# REVIEW/INSTALL MANUALLY ONLY.  Initial bootstrap can step the NX host clock.
+# Stop every ROS/Nav2/UI container before a separately approved activation.
+refclock SOCK /run/chrony/go2.sock refid GO2 poll 0 filter 64 prefer trust
+makestep 0.1 3
+
+# No external server/pool is configured.  If the laptop must temporarily
+# follow NX, serve NTP only on the dedicated Go2 link and only to .99.
+bindaddress 192.168.123.18
+allow 192.168.123.99/32

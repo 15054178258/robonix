@@ -1,0 +1,21 @@
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.unitree.go2.d435i.external
+  version: 0.1.0
+  description: Read-only external Intel RealSense D435i ROS 2 topic registrar for Robonix.
+  license: Apache-2.0
+  tags: [primitive, unitree, go2, intel, realsense, d435i, rgbd, ros2, readonly]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+build: bash build.sh
+start: bash start.sh
+
+capabilities:
+  - name: robonix/primitive/camera/driver
+  - name: robonix/primitive/camera/rgb
+  - name: robonix/primitive/camera/depth
+  - name: robonix/primitive/camera/intrinsics
+
+depends: []

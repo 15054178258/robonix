@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robonix Go2 · 遥测与任务面板</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071017;
+      --panel: rgba(16, 29, 39, 0.92);
+      --panel-2: #0b1821;
+      --line: rgba(155, 205, 223, 0.16);
+      --text: #e8f4f7;
+      --muted: #8ea7b2;
+      --cyan: #55d9ef;
+      --green: #67e49b;
+      --amber: #ffc76b;
+      --red: #ff7f86;
+      --shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% -10%, rgba(40, 177, 202, 0.2), transparent 34rem),
+        radial-gradient(circle at 95% 8%, rgba(56, 201, 134, 0.1), transparent 28rem),
+        var(--bg);
+      font-family: Inter, "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.12;
+      background-image:
+        linear-gradient(rgba(120, 190, 210, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(120, 190, 210, 0.12) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    main { width: min(1560px, calc(100% - 28px)); margin: 0 auto; padding: 20px 0 38px; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .mark {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(85, 217, 239, 0.55);
+      border-radius: 12px;
+      color: var(--cyan);
+      font: 800 17px/1 ui-monospace, monospace;
+      background: rgba(85, 217, 239, 0.08);
+      box-shadow: inset 0 0 20px rgba(85, 217, 239, 0.07);
+    }
+    h1 { margin: 0; font-size: clamp(19px, 2vw, 27px); letter-spacing: 0.02em; }
+    .subtitle { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .header-status { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(5, 13, 18, 0.68);
+      font-size: 12px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 10px currentColor; }
+    .fresh .dot, .dot.fresh { color: var(--green); background: var(--green); }
+    .stale .dot, .dot.stale { color: var(--amber); background: var(--amber); }
+    .error .dot, .missing .dot, .dot.error { color: var(--red); background: var(--red); }
+    .readonly { color: var(--green); border-color: rgba(103, 228, 155, 0.3); }
+    .alert {
+      display: none;
+      margin-bottom: 14px;
+      padding: 10px 13px;
+      border: 1px solid rgba(255, 127, 134, 0.45);
+      border-radius: 10px;
+      color: #ffd5d8;
+      background: rgba(107, 31, 38, 0.48);
+      font-size: 13px;
+    }
+    .diagnostic-banner {
+      display: none;
+      margin-bottom: 14px;
+      padding: 13px 15px;
+      border: 2px solid rgba(255, 199, 107, 0.7);
+      border-radius: 10px;
+      color: #fff0c9;
+      background: rgba(92, 60, 14, 0.64);
+      font-size: 14px;
+      font-weight: 750;
+      letter-spacing: 0.025em;
+    }
+    .diagnostic-banner span { display: block; margin-top: 5px; color: #dcbf80; font-size: 11px; font-weight: 500; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+    .panel {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(18, 33, 44, 0.94), rgba(10, 23, 31, 0.94));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .panel-title {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 13px;
+      border-bottom: 1px solid var(--line);
+    }
+    .panel-title h2 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: 0.05em; }
+    .meta { color: var(--muted); font: 11px/1.35 ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .camera-go2 { grid-column: span 4; }
+    .camera-d435 { grid-column: span 5; }
+    .lidar { grid-column: span 3; }
+    .tasks { grid-column: span 4; }
+    .map { grid-column: span 8; }
+    .telemetry { grid-column: span 4; }
+    .voice { grid-column: span 12; }
+    .inputs { grid-column: span 12; }
+    .visual {
+      position: relative;
+      width: 100%;
+      height: 330px;
+      display: grid;
+      place-items: center;
+      background: #050c11;
+    }
+    .camera-image { width: 100%; height: 100%; object-fit: contain; display: none; }
+    .camera-split { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; }
+    .camera-view { position: relative; width: 100%; height: 100%; min-width: 0; display: grid; place-items: center; overflow: hidden; }
+    .camera-view + .camera-view { border-left: 1px solid var(--line); }
+    .camera-caption { position: absolute; left: 8px; top: 8px; z-index: 2; padding: 4px 6px; border-radius: 6px; color: var(--text); background: rgba(3, 10, 14, 0.72); font: 10px/1.2 ui-monospace, monospace; }
+    canvas { display: block; width: 100%; height: 100%; }
+    .placeholder { position: absolute; color: #637b85; font-size: 12px; text-align: center; padding: 18px; }
+    .task-body, .telemetry-body { padding: 12px; display: grid; gap: 10px; }
+    .status-block {
+      min-height: 84px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(4, 12, 17, 0.42);
+    }
+    .eyebrow { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .status-main { margin-top: 7px; color: var(--cyan); font-size: 17px; font-weight: 680; }
+    .status-detail { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .metric { padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(4, 12, 17, 0.42); }
+    .metric span { display: block; color: var(--muted); font-size: 10px; }
+    .metric strong { display: block; margin-top: 5px; font: 600 14px/1.2 ui-monospace, monospace; }
+    .pose-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; }
+    .pose-button { min-height: 34px; border: 1px solid rgba(85, 217, 239, 0.42); border-radius: 8px; color: var(--text); background: rgba(21, 104, 123, 0.32); cursor: pointer; font: 620 11px/1.2 inherit; }
+    .pose-button.reset { border-color: rgba(255, 199, 107, 0.45); background: rgba(92, 60, 14, 0.3); }
+    .pose-button:disabled { cursor: not-allowed; opacity: 0.38; }
+    .topic-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 11px; }
+    .topic {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: rgba(4, 12, 17, 0.42);
+    }
+    .topic-head { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+    .topic-name, .topic-frame { margin-top: 7px; color: var(--muted); font: 10px/1.35 ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topic-error { margin-top: 6px; color: var(--red); font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+    .voice-body { display: grid; grid-template-columns: minmax(250px, 0.8fr) minmax(0, 2.2fr); gap: 12px; padding: 12px; }
+    .voice-control { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(4, 12, 17, 0.42); }
+    .voice-button {
+      width: 100%; min-height: 42px; margin-top: 10px; border: 1px solid rgba(85, 217, 239, 0.5);
+      border-radius: 9px; color: var(--text); background: rgba(21, 104, 123, 0.42); cursor: pointer;
+      font: 650 13px/1.2 inherit;
+    }
+    .voice-button:hover:not(:disabled) { background: rgba(27, 134, 157, 0.55); }
+    .voice-button.recording { color: #ffe3e5; border-color: rgba(255, 127, 134, 0.65); background: rgba(123, 35, 44, 0.55); }
+    .voice-button:disabled { cursor: not-allowed; opacity: 0.45; }
+    .pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; align-content: stretch; }
+    .stage { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: rgba(4, 12, 17, 0.42); }
+    .stage strong { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .stage span { display: block; margin-top: 5px; color: #607883; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+    .stage.active { border-color: rgba(255, 199, 107, 0.48); }
+    .stage.active strong { color: var(--amber); }
+    .stage.done { border-color: rgba(103, 228, 155, 0.38); }
+    .stage.done strong { color: var(--green); }
+    .stage.blocked { border-color: rgba(255, 199, 107, 0.55); background: rgba(92, 60, 14, 0.26); }
+    .stage.blocked strong { color: var(--amber); }
+    .stage.failed { border-color: rgba(255, 127, 134, 0.48); }
+    .stage.failed strong { color: var(--red); }
+    footer { margin-top: 14px; color: #607680; font-size: 10px; text-align: right; }
+    @media (max-width: 1100px) {
+      .camera-go2, .camera-d435, .map { grid-column: span 7; }
+      .lidar, .tasks, .telemetry { grid-column: span 5; }
+      .topic-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .voice-body { grid-template-columns: 1fr; }
+      .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      main { width: min(100% - 18px, 1560px); padding-top: 12px; }
+      header { align-items: flex-start; flex-direction: column; }
+      .header-status { justify-content: flex-start; }
+      .camera-go2, .camera-d435, .lidar, .tasks, .map, .telemetry, .voice { grid-column: span 12; }
+      .visual { height: 280px; }
+      .camera-split { grid-template-columns: 1fr; height: 520px; }
+      .camera-view + .camera-view { border-left: 0; border-top: 1px solid var(--line); }
+      .topic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pipeline { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">
+        <div class="mark">G2</div>
+        <div>
+          <h1>Robonix Go2 态势面板</h1>
+          <div class="subtitle" id="headerSubtitle">相机 · 雷达 · 地图 · 位姿 · 任务状态</div>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="pill readonly"><span class="dot fresh"></span>遥测 READ-ONLY</div>
+        <div class="pill" id="rosPill"><span class="dot"></span><span id="rosText">ROS 初始化中</span></div>
+        <div class="pill"><span id="updateText">等待首帧</span></div>
+      </div>
+    </header>
+
+    <div class="diagnostic-banner" id="diagnosticBanner">
+      READ-ONLY DIAGNOSTIC / NOT NAVIGATION READY
+      <span>仅展示真实相机、原始雷达和原始里程计接收数据；设备时间尚未校准，未启动地图、TF、语义导航或 Nav2。</span>
+    </div>
+    <div class="alert" id="globalAlert"></div>
+
+    <section class="grid">
+      <article class="panel camera-go2">
+        <div class="panel-title"><h2>Go2 内置相机</h2><div class="meta" id="cameraMeta">等待图像</div></div>
+        <div class="visual">
+          <img class="camera-image" id="cameraImage" alt="Go2 内置相机实时画面">
+          <div class="placeholder" id="cameraPlaceholder">尚未收到相机图像</div>
+        </div>
+      </article>
+
+      <article class="panel camera-d435">
+        <div class="panel-title"><h2>D435i 独立预览</h2><div class="meta" id="d435iMeta">等待彩色、深度与标定</div></div>
+        <div class="visual camera-split">
+          <div class="camera-view">
+            <div class="camera-caption">COLOR</div>
+            <img class="camera-image" id="d435iColorImage" alt="D435i 彩色画面">
+            <div class="placeholder" id="d435iColorPlaceholder">尚未收到 D435i 彩色图像</div>
+          </div>
+          <div class="camera-view">
+            <div class="camera-caption">ALIGNED DEPTH</div>
+            <img class="camera-image" id="d435iDepthImage" alt="D435i 对齐深度伪彩预览">
+            <div class="placeholder" id="d435iDepthPlaceholder">尚未收到 D435i 对齐深度</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel lidar">
+        <div class="panel-title"><h2>雷达俯视</h2><div class="meta" id="lidarMeta">等待点云或扫描</div></div>
+        <div class="visual"><canvas id="lidarCanvas"></canvas><div class="placeholder" id="lidarPlaceholder">尚未收到雷达数据</div></div>
+      </article>
+
+      <article class="panel tasks">
+        <div class="panel-title"><h2>任务状态</h2><div class="meta">仅观察</div></div>
+        <div class="task-body">
+          <div class="status-block">
+            <div class="eyebrow">Nav2 NavigateToPose</div>
+            <div class="status-main" id="navMain">idle</div>
+            <div class="status-detail" id="navDetail">尚无动作状态</div>
+          </div>
+          <div class="status-block">
+            <div class="eyebrow">语义任务</div>
+            <div class="status-main" id="semanticMain">idle</div>
+            <div class="status-detail" id="semanticDetail">尚无语义任务状态</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel map">
+        <div class="panel-title"><h2>占据栅格与机器人位姿</h2><div class="meta" id="mapMeta">等待地图</div></div>
+        <div class="visual"><canvas id="mapCanvas"></canvas><div class="placeholder" id="mapPlaceholder">尚未收到地图</div></div>
+      </article>
+
+      <article class="panel telemetry">
+        <div class="panel-title"><h2>定位与里程计</h2><div class="meta" id="poseFrame">map → base_link</div></div>
+        <div class="telemetry-body">
+          <div class="eyebrow">地图坐标</div>
+          <div class="metrics">
+            <div class="metric"><span>X</span><strong id="poseX">—</strong></div>
+            <div class="metric"><span>Y</span><strong id="poseY">—</strong></div>
+            <div class="metric"><span>YAW</span><strong id="poseYaw">—</strong></div>
+          </div>
+          <div class="eyebrow">里程计速度</div>
+          <div class="metrics">
+            <div class="metric"><span>VX</span><strong id="odomVx">—</strong></div>
+            <div class="metric"><span>VY</span><strong id="odomVy">—</strong></div>
+            <div class="metric"><span>WZ</span><strong id="odomWz">—</strong></div>
+          </div>
+          <div class="status-detail" id="odomDetail">尚未收到里程计</div>
+          <div class="status-block">
+            <div class="eyebrow">地图代际绑定的定位种子</div>
+            <div class="status-main" id="initialPoseMain">未配置</div>
+            <div class="status-detail" id="initialPoseDetail">保存的是操作员初始定位估计，不是当前位姿，也不是导航目标；RViz 箭头仅代表历史点击位置。</div>
+            <div class="pose-actions">
+              <button class="pose-button" id="restorePoseButton" type="button" disabled>恢复定位种子</button>
+              <button class="pose-button reset" id="resetPoseButton" type="button" disabled>归档并重置</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel voice">
+        <div class="panel-title"><h2>浏览器语音入口与闭环阶段</h2><div class="meta">仅转交 Robonix Liaison · 默认关闭</div></div>
+        <div class="voice-body">
+          <div class="voice-control">
+            <div class="eyebrow">PUSH TO TALK</div>
+            <button class="voice-button" id="voiceButton" type="button" disabled>语音入口未启用</button>
+            <div class="status-detail" id="voiceDetail">需显式启用本机回环语音入口；音频不落盘。</div>
+            <div class="status-detail" id="voiceTranscript"></div>
+          </div>
+          <div class="pipeline" aria-label="语音导航阶段状态">
+            <div class="stage" id="stageCapture"><div class="eyebrow">01</div><strong>浏览器采集</strong><span>等待</span></div>
+            <div class="stage" id="stageAsr"><div class="eyebrow">02</div><strong>中文 ASR</strong><span>等待 Liaison</span></div>
+            <div class="stage" id="stagePilot"><div class="eyebrow">03</div><strong>Liaison / Pilot</strong><span>等待</span></div>
+            <div class="stage" id="stageSemantic"><div class="eyebrow">04</div><strong>语义目标 Pose</strong><span>等待</span></div>
+            <div class="stage" id="stageNav"><div class="eyebrow">05</div><strong>Nav2 任务</strong><span>等待</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel inputs">
+        <div class="panel-title"><h2>数据连接与新鲜度</h2><div class="meta">fresh / stale / missing / error</div></div>
+        <div class="topic-grid" id="topicGrid"></div>
+      </article>
+    </section>
+    <footer id="scopeFooter">硬件遥测保持只读；可选语音按钮只把内存音频交给 Robonix Liaison，不直接调用 ROS、Nav2 或 Unitree。</footer>
+  </main>
+
+  <script>
+    "use strict";
+    const byId = (id) => document.getElementById(id);
+    const stateLabels = { fresh: "新鲜", stale: "过期", missing: "缺失", error: "错误" };
+    let latest = null;
+    const cameraSequences = { go2: -1, d435iColor: -1, d435iDepth: -1 };
+    let mapSequence = -1;
+    let mapImageReady = false;
+    let voiceNonce = "";
+    let voiceContract = null;
+    let voiceCapture = null;
+    const mapImage = new Image();
+
+    const safe = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+    })[character]);
+    const fixed = (value, digits = 2) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "—";
+    const degrees = (radians) => Number.isFinite(Number(radians)) ? `${(Number(radians) * 180 / Math.PI).toFixed(1)}°` : "—";
+
+    function renderCamera(stream, payload, imageId, placeholderId, endpoint) {
+      if (payload?.sequence === undefined || payload.sequence === cameraSequences[stream]) return;
+      cameraSequences[stream] = payload.sequence;
+      const image = byId(imageId);
+      const placeholder = byId(placeholderId);
+      image.onload = () => { image.style.display = "block"; placeholder.style.display = "none"; };
+      image.onerror = () => { image.style.display = "none"; placeholder.style.display = "block"; };
+      image.src = `${endpoint}?sequence=${encodeURIComponent(payload.sequence)}`;
+    }
+    const age = (seconds) => seconds === null || seconds === undefined ? "从未" : `${Number(seconds).toFixed(1)} s`;
+
+    function freshMapPose(data) {
+      const topic = data?.topics?.pose_map;
+      if (data?.profile?.diagnostic_only) return null;
+      if (!data?.bridge?.connected || topic?.state !== "fresh") return null;
+      return data?.pose_map?.position ? data.pose_map : null;
+    }
+
+    function poseAvailability(data) {
+      if (data?.profile?.diagnostic_only) return "原始 /utlidar/robot_odom（非定位结果）";
+      const topic = data?.topics?.pose_map || {};
+      if (!data?.bridge?.connected) return "ROS 已断开 · 位姿隐藏";
+      if (topic.state === "error") return `位姿错误 · ${topic.error || "数据无效"}`;
+      if (topic.state === "stale") return `位姿已过期 · age ${age(topic.age_s)}`;
+      if (topic.state === "missing") return "等待地图位姿";
+      return "位姿数据不可用";
+    }
+
+    function mapAvailability(data) {
+      if (data?.profile?.diagnostic_only) return "未启动（诊断 profile）";
+      const map = data?.map;
+      const topic = data?.topics?.map || {};
+      const dimensions = map
+        ? `${map.width}×${map.height} · ${fixed(map.resolution, 3)} m/cell`
+        : "无地图缓存";
+      if (!data?.bridge?.connected && topic.state === "error") {
+        return `缓存快照 · ROS 已断开 · 地图错误 · ${dimensions}`;
+      }
+      if (!data?.bridge?.connected) {
+        return map ? `缓存快照 · ROS 已断开 · ${dimensions}` : `ROS 已断开 · ${dimensions}`;
+      }
+      if (topic.state === "error") {
+        return map ? `缓存快照 · 地图错误 · ${dimensions}` : `地图错误 · ${dimensions}`;
+      }
+      if (topic.state === "fresh" && map) return `当前地图快照 · fresh · ${dimensions}`;
+      if (map) return `缓存快照 · map ${topic.state || "unknown"} · ${dimensions}`;
+      return "等待地图";
+    }
+
+    function fitCanvas(canvas) {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
+      const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      return { width, height, ratio };
+    }
+
+    function drawLidar(lidar) {
+      const canvas = byId("lidarCanvas");
+      const { width, height, ratio } = fitCanvas(canvas);
+      const context = canvas.getContext("2d");
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = "#050c11";
+      context.fillRect(0, 0, width, height);
+      const points = Array.isArray(lidar?.points) ? lidar.points : [];
+      byId("lidarPlaceholder").style.display = points.length ? "none" : "block";
+      if (!points.length) return;
+
+      let extent = 2;
+      for (const point of points) extent = Math.max(extent, Math.abs(Number(point[0]) || 0), Math.abs(Number(point[1]) || 0));
+      extent = Math.min(30, extent * 1.12);
+      const scale = Math.min(width, height) / (extent * 2.12);
+      const cx = width / 2;
+      const cy = height / 2;
+      context.lineWidth = ratio;
+      context.strokeStyle = "rgba(117, 171, 187, .14)";
+      for (let radius = 2; radius < extent; radius += 2) {
+        context.beginPath();
+        context.arc(cx, cy, radius * scale, 0, Math.PI * 2);
+        context.stroke();
+      }
+      context.strokeStyle = "rgba(117, 171, 187, .22)";
+      context.beginPath(); context.moveTo(cx, 0); context.lineTo(cx, height); context.stroke();
+      context.beginPath(); context.moveTo(0, cy); context.lineTo(width, cy); context.stroke();
+      context.fillStyle = "rgba(85, 217, 239, .82)";
+      for (const point of points) {
+        const px = cx - Number(point[1]) * scale;
+        const py = cy - Number(point[0]) * scale;
+        if (px < 0 || px > width || py < 0 || py > height) continue;
+        context.fillRect(px - ratio, py - ratio, ratio * 2, ratio * 2);
+      }
+      context.fillStyle = "#67e49b";
+      context.beginPath();
+      context.moveTo(cx, cy - 9 * ratio);
+      context.lineTo(cx - 6 * ratio, cy + 7 * ratio);
+      context.lineTo(cx + 6 * ratio, cy + 7 * ratio);
+      context.closePath();
+      context.fill();
+    }
+
+    function drawMap() {
+      const canvas = byId("mapCanvas");
+      const { width, height, ratio } = fitCanvas(canvas);
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#050c11";
+      context.fillRect(0, 0, width, height);
+      const map = latest?.map;
+      byId("mapPlaceholder").style.display = map && mapImageReady ? "none" : "block";
+      if (!map || !mapImageReady) return;
+      const scale = Math.min(width / map.width, height / map.height);
+      const drawWidth = map.width * scale;
+      const drawHeight = map.height * scale;
+      const offsetX = (width - drawWidth) / 2;
+      const offsetY = (height - drawHeight) / 2;
+      context.imageSmoothingEnabled = false;
+      context.drawImage(mapImage, offsetX, offsetY, drawWidth, drawHeight);
+      context.strokeStyle = "rgba(85, 217, 239, .5)";
+      context.lineWidth = ratio;
+      context.strokeRect(offsetX, offsetY, drawWidth, drawHeight);
+
+      const pose = latest?.topics?.map?.state === "fresh" ? freshMapPose(latest) : null;
+      if (!pose?.position || !map.origin || !Number(map.resolution)) return;
+      const dx = Number(pose.position.x) - Number(map.origin.x);
+      const dy = Number(pose.position.y) - Number(map.origin.y);
+      const originYaw = Number(map.origin.yaw) || 0;
+      const localX = Math.cos(originYaw) * dx + Math.sin(originYaw) * dy;
+      const localY = -Math.sin(originYaw) * dx + Math.cos(originYaw) * dy;
+      const gridX = localX / Number(map.resolution);
+      const gridY = localY / Number(map.resolution);
+      const px = offsetX + gridX * scale;
+      const py = offsetY + (map.height - gridY) * scale;
+      const heading = Number(pose.yaw) - originYaw;
+      context.save();
+      context.translate(px, py);
+      context.rotate(-heading + Math.PI / 2);
+      context.shadowColor = "#071017";
+      context.shadowBlur = 5 * ratio;
+      context.fillStyle = "#55d9ef";
+      context.beginPath();
+      context.moveTo(0, -11 * ratio);
+      context.lineTo(-7 * ratio, 8 * ratio);
+      context.lineTo(0, 5 * ratio);
+      context.lineTo(7 * ratio, 8 * ratio);
+      context.closePath();
+      context.fill();
+      context.restore();
+    }
+
+    mapImage.onload = () => { mapImageReady = true; drawMap(); };
+    mapImage.onerror = () => { mapImageReady = false; byId("mapPlaceholder").textContent = "地图图像解码失败"; drawMap(); };
+
+    function renderTopics(topics) {
+      byId("topicGrid").innerHTML = Object.values(topics || {}).map((topic) => `
+        <div class="topic ${safe(topic.state)}">
+          <div class="topic-head"><span class="dot"></span><span>${safe(topic.label)}</span><span class="meta">${safe(stateLabels[topic.state] || topic.state)}</span></div>
+          <div class="topic-name" title="${safe(topic.topic)}">${safe(topic.topic)}</div>
+          <div class="topic-frame">age ${safe(age(topic.age_s))}${topic.frame_id ? ` · ${safe(topic.frame_id)}` : ""}</div>
+          ${topic.error ? `<div class="topic-error">${safe(topic.error)}</div>` : ""}
+        </div>`).join("");
+    }
+
+    function setStage(id, state, detail) {
+      const element = byId(id);
+      element.className = `stage ${state || ""}`;
+      element.querySelector("span").textContent = detail;
+    }
+
+    function renderPipeline(data) {
+      if (data.profile?.diagnostic_only) {
+        for (const id of ["stageCapture", "stageAsr", "stagePilot", "stageSemantic", "stageNav"]) {
+          setStage(id, "", "诊断 profile 未启动");
+        }
+        return;
+      }
+      const voice = data.voice || {};
+      const semantic = data.semantic_task || {};
+      const navigation = data.navigation || {};
+      const failed = voice.status === "failed";
+      const captureDone = ["accepted", "connecting", "liaison", "recording", "asr", "recognized", "authorized", "pilot", "completed"].includes(voice.status);
+      const asrDone = Boolean(voice.transcript) || ["recognized", "authorized", "pilot", "completed"].includes(voice.status);
+      const pilotDone = Boolean(voice.intent_target) || voice.status === "completed";
+      setStage("stageCapture", failed ? "failed" : voiceCapture ? "active" : captureDone ? "done" : "", voiceCapture ? "正在录音" : voice.enabled ? (captureDone ? "音频已校验" : "等待按键") : "功能关闭");
+      setStage("stageAsr", failed ? "failed" : voice.status === "asr" ? "active" : asrDone ? "done" : "", voice.status === "asr" ? "识别中" : voice.transcript || (asrDone ? "已得到文本" : "等待 Liaison"));
+      setStage("stagePilot", failed ? "failed" : ["liaison", "authorized", "pilot"].includes(voice.status) && !pilotDone ? "active" : pilotDone ? "done" : "", voice.intent_target ? `已解析 ${voice.intent_target}` : voice.status === "pilot" ? "Pilot 处理中" : pilotDone ? "会话完成" : "等待");
+      const previewTarget = voice.execution_mode === "preview" ? voice.intent_target : "";
+      const semanticTarget = semantic.target_name || previewTarget;
+      const semanticDone = Boolean(previewTarget) || ["resolved", "navigating", "succeeded"].includes(semantic.status);
+      setStage("stageSemantic", semantic.status === "failed" ? "failed" : ["received", "resolving"].includes(semantic.status) ? "active" : semanticDone ? "done" : "", previewTarget ? `${previewTarget} · 已解析（未执行）` : semanticTarget ? `${semanticTarget} · ${semantic.status}` : "等待");
+      const previewBlocked = voice.execution_mode === "preview" && Boolean(voice.blocked_reason);
+      const readiness = `map ${data.topics?.map?.state || "unknown"} · Nav2 status ${data.topics?.nav_status?.state || "unknown"}`;
+      setStage("stageNav", previewBlocked ? "blocked" : ["aborted", "canceled", "failed"].includes(navigation.status) ? "failed" : navigation.status === "executing" ? "active" : navigation.status === "succeeded" ? "done" : "", previewBlocked ? `BLOCKED · NO CALL · ${readiness}` : navigation.status || "等待");
+    }
+
+    async function loadVoiceContract() {
+      const response = await fetch("/api/voice", { cache: "no-store" });
+      if (!response.ok) throw new Error(`语音配置 HTTP ${response.status}`);
+      voiceContract = await response.json();
+      voiceNonce = voiceContract.csrf_nonce || "";
+      return voiceContract;
+    }
+
+    function flattenAudio(chunks) {
+      const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const result = new Float32Array(total);
+      let offset = 0;
+      for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
+      return result;
+    }
+
+    function resampleMono(input, sourceRate, targetRate) {
+      if (sourceRate === targetRate) return input;
+      const ratio = sourceRate / targetRate;
+      const length = Math.max(1, Math.floor(input.length / ratio));
+      const output = new Float32Array(length);
+      for (let i = 0; i < length; i += 1) {
+        const position = i * ratio;
+        const left = Math.floor(position);
+        const right = Math.min(input.length - 1, left + 1);
+        const fraction = position - left;
+        output[i] = input[left] * (1 - fraction) + input[right] * fraction;
+      }
+      return output;
+    }
+
+    function pcmWav(samples, sampleRate) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+      const ascii = (offset, value) => { for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i)); };
+      ascii(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); ascii(8, "WAVE");
+      ascii(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+      ascii(36, "data"); view.setUint32(40, samples.length * 2, true);
+      for (let i = 0; i < samples.length; i += 1) {
+        const bounded = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * 2, bounded < 0 ? bounded * 32768 : bounded * 32767, true);
+      }
+      return new Blob([buffer], { type: "audio/wav" });
+    }
+
+    async function startVoiceCapture() {
+      const contract = await loadVoiceContract();
+      if (!contract.enabled || !voiceNonce) throw new Error("服务器未启用浏览器语音入口");
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("当前浏览器不支持麦克风采集");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) { stream.getTracks().forEach((track) => track.stop()); throw new Error("当前浏览器不支持 Web Audio"); }
+      const context = new AudioContextClass();
+      try {
+        if (context.state === "suspended") await context.resume();
+        if (context.state !== "running") throw new Error(`麦克风音频引擎未运行（${context.state}）`);
+        const source = context.createMediaStreamSource(stream);
+        const processor = context.createScriptProcessor(4096, 1, 1);
+        const chunks = [];
+        processor.onaudioprocess = (event) => chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+        source.connect(processor); processor.connect(context.destination);
+        const maximumMs = Math.min(Number(contract.limits?.max_duration_s || 8), 8) * 1000;
+        const timer = window.setTimeout(() => stopVoiceCapture().catch(showVoiceError), maximumMs);
+        voiceCapture = { stream, context, source, processor, chunks, sampleRate: context.sampleRate, timer };
+      } catch (error) {
+        stream.getTracks().forEach((track) => track.stop());
+        await context.close().catch(() => {});
+        throw error;
+      }
+      byId("voiceButton").className = "voice-button recording";
+      byId("voiceButton").textContent = "停止并提交给 Liaison";
+      byId("voiceDetail").textContent = "正在本机浏览器录音；最长 8 秒，不保存到磁盘。";
+      renderPipeline(latest || { voice: contract, semantic_task: {}, navigation: {} });
+    }
+
+    function showVoiceError(error) {
+      byId("voiceDetail").textContent = `语音入口失败：${error.message || error}`;
+      byId("voiceButton").className = "voice-button";
+      if (!voiceCapture) byId("voiceButton").textContent = "按住流程：点击开始录音";
+    }
+
+    async function stopVoiceCapture() {
+      const capture = voiceCapture;
+      if (!capture) return;
+      voiceCapture = null;
+      window.clearTimeout(capture.timer);
+      capture.processor.disconnect(); capture.source.disconnect(); capture.stream.getTracks().forEach((track) => track.stop());
+      await capture.context.close();
+      const source = flattenAudio(capture.chunks);
+      const samples = resampleMono(source, capture.sampleRate, 16000);
+      if (!samples.length) throw new Error("未采集到麦克风音频，请检查浏览器麦克风权限");
+      const wav = pcmWav(samples, 16000);
+      byId("voiceButton").className = "voice-button";
+      byId("voiceButton").disabled = true;
+      byId("voiceButton").textContent = "正在安全转交 Liaison…";
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 6000);
+      try {
+        const response = await fetch("/api/voice", { method: "POST", cache: "no-store", credentials: "same-origin", headers: { "Content-Type": "audio/wav", "X-Go2-Voice-Nonce": voiceNonce }, body: wav, signal: controller.signal });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+        byId("voiceDetail").textContent = result.message || "已提交给 Liaison";
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    byId("voiceButton").addEventListener("click", () => {
+      const action = voiceCapture ? stopVoiceCapture() : startVoiceCapture();
+      action.catch(showVoiceError);
+    });
+
+    async function updateInitialPose(action) {
+      const initialPose = latest?.initial_pose || {};
+      if (!initialPose.map_id || initialPose.generation === null || initialPose.generation === undefined) return;
+      const reset = action === "reset";
+      if (reset && !window.confirm(`确认只归档并重置地图 ${initialPose.map_id} 第 ${initialPose.generation} 代的初始定位种子？地图、日志和历史 sidecar 不会删除。`)) return;
+      const payload = reset
+        ? { confirm_map_id: initialPose.map_id, generation: initialPose.generation }
+        : { map_id: initialPose.map_id, generation: initialPose.generation };
+      const response = await fetch(`/api/initial-pose/${action}`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+    }
+
+    byId("restorePoseButton").addEventListener("click", () => updateInitialPose("restore").catch((error) => {
+      byId("initialPoseDetail").textContent = `恢复失败：${error.message}`;
+    }));
+    byId("resetPoseButton").addEventListener("click", () => updateInitialPose("reset").catch((error) => {
+      byId("initialPoseDetail").textContent = `重置失败：${error.message}`;
+    }));
+
+    function render(data) {
+      latest = data;
+      const diagnosticOnly = Boolean(data.profile?.diagnostic_only);
+      byId("diagnosticBanner").style.display = diagnosticOnly ? "block" : "none";
+      byId("headerSubtitle").textContent = diagnosticOnly
+        ? "真实硬件接收侧诊断 · 相机 · 原始雷达 · 原始里程计"
+        : "相机 · 雷达 · 地图 · 位姿 · 任务状态";
+      byId("scopeFooter").textContent = diagnosticOnly
+        ? "只读硬件诊断：未启动地图、TF、语义导航、Nav2、语音或任何运动接口；不得作为导航验收证据。"
+        : "硬件遥测保持只读；可选语音按钮只把内存音频交给 Robonix Liaison，不直接调用 ROS、Nav2 或 Unitree。";
+      const connected = Boolean(data.bridge?.connected);
+      byId("rosPill").className = `pill ${connected ? "fresh" : "error"}`;
+      byId("rosText").textContent = connected ? "ROS 观察线程在线" : "ROS 未连接";
+      byId("updateText").textContent = `更新 ${new Date(data.generated_at * 1000).toLocaleTimeString()}`;
+      const bridgeError = data.bridge?.error || "";
+      byId("globalAlert").style.display = bridgeError ? "block" : "none";
+      byId("globalAlert").textContent = bridgeError;
+
+      const cameras = data.cameras || {};
+      const camera = cameras.go2?.color || data.camera;
+      const cameraQuality = cameras.go2?.quality || data.camera_quality;
+      const cameraQualityText = cameraQuality
+        ? `${fixed(cameraQuality.rate_hz, 2)} Hz · 错误 ${fixed((cameraQuality.quality_error_ratio || 0) * 100, 1)}% · ${cameraQuality.healthy ? "健康" : "未通过质量门"}`
+        : "等待质量诊断";
+      byId("cameraMeta").textContent = camera
+        ? `${camera.width}×${camera.height} · ${camera.encoding} · ${cameraQualityText}`
+        : `等待图像 · ${cameraQualityText}`;
+      renderCamera("go2", camera, "cameraImage", "cameraPlaceholder", "/api/cameras/go2.jpg");
+
+      const d435i = cameras.d435i || {};
+      const calibration = d435i.camera_info;
+      const colorMeta = d435i.color
+        ? `${d435i.color.width}×${d435i.color.height} ${d435i.color.encoding} ${fixed(d435i.color.fps, 1)} Hz`
+        : "彩色缺失";
+      const depthMeta = d435i.depth
+        ? `${d435i.depth.width}×${d435i.depth.height} ${d435i.depth.encoding} ${fixed(d435i.depth.fps, 1)} Hz`
+        : "深度缺失";
+      const calibrationMeta = calibration
+        ? `fx ${fixed(calibration.fx, 1)} / fy ${fixed(calibration.fy, 1)}`
+        : "标定缺失";
+      byId("d435iMeta").textContent = `${colorMeta} · ${depthMeta} · ${calibrationMeta}`;
+      renderCamera("d435iColor", d435i.color, "d435iColorImage", "d435iColorPlaceholder", "/api/cameras/d435i-color.jpg");
+      renderCamera("d435iDepth", d435i.depth, "d435iDepthImage", "d435iDepthPlaceholder", "/api/cameras/d435i-depth.jpg");
+
+      const lidar = data.lidar;
+      byId("lidarMeta").textContent = lidar ? `${lidar.kind} · ${lidar.point_count} 点` : "等待点云或扫描";
+      drawLidar(lidar);
+
+      const map = data.map;
+      const mapTopic = data.topics?.map || {};
+      const mapDegraded = !diagnosticOnly && (
+        !connected || mapTopic.state === "error" || (map && mapTopic.state !== "fresh")
+      );
+      byId("mapMeta").style.color = mapDegraded ? "var(--amber)" : "";
+      byId("mapMeta").textContent = mapAvailability(data);
+      if (diagnosticOnly) byId("mapPlaceholder").textContent = "诊断 profile 不启动地图或 map TF";
+      if (map?.sequence !== undefined && map.sequence !== mapSequence) {
+        mapSequence = map.sequence;
+        mapImageReady = false;
+        mapImage.src = `/api/map.png?sequence=${encodeURIComponent(mapSequence)}`;
+      } else {
+        drawMap();
+      }
+
+      const pose = freshMapPose(data);
+      byId("poseFrame").textContent = pose
+        ? `${pose.parent_frame} → ${pose.child_frame}`
+        : poseAvailability(data);
+      byId("poseX").textContent = pose ? `${fixed(pose.position?.x)} m` : "—";
+      byId("poseY").textContent = pose ? `${fixed(pose.position?.y)} m` : "—";
+      byId("poseYaw").textContent = pose ? degrees(pose.yaw) : "—";
+
+      const odom = data.odom;
+      byId("odomVx").textContent = odom ? `${fixed(odom.linear?.x)} m/s` : "—";
+      byId("odomVy").textContent = odom ? `${fixed(odom.linear?.y)} m/s` : "—";
+      byId("odomWz").textContent = odom ? `${fixed(odom.angular?.z)} rad/s` : "—";
+      byId("odomDetail").textContent = odom ? `${odom.frame_id} → ${odom.child_frame_id} · x ${fixed(odom.position?.x)} m · y ${fixed(odom.position?.y)} m` : "尚未收到里程计";
+
+      const initialPose = data.initial_pose || {};
+      const poseIdentity = initialPose.map_id
+        ? `${initialPose.map_id} · generation ${initialPose.generation} · ${initialPose.mode || "未知模式"}`
+        : "等待具名地图代际";
+      byId("initialPoseMain").textContent = initialPose.saved ? "已保存定位种子" : (initialPose.enabled ? "尚无可用种子" : "未配置");
+      byId("initialPoseDetail").textContent = initialPose.error
+        ? `${poseIdentity} · ${initialPose.error}`
+        : `${poseIdentity} · 保存的是历史操作员初始定位估计；当前位姿以上方 Mapping 输出为准。`;
+      const poseActionsReady = Boolean(initialPose.enabled && initialPose.saved && initialPose.mode === "localization");
+      byId("restorePoseButton").disabled = !poseActionsReady;
+      byId("resetPoseButton").disabled = !Boolean(initialPose.enabled && initialPose.saved);
+
+      const navigation = data.navigation || {};
+      const voice = data.voice || {};
+      const previewBlocked = voice.execution_mode === "preview" && Boolean(voice.blocked_reason);
+      byId("navMain").textContent = diagnosticOnly ? "NOT STARTED" : previewBlocked ? "BLOCKED · NO CALL" : navigation.status || "idle";
+      byId("navDetail").textContent = diagnosticOnly
+        ? "只读诊断 profile 未启动 Nav2"
+        : previewBlocked ? voice.blocked_reason
+        : navigation.goal_id ? `goal ${navigation.goal_id.slice(0, 16)}… · code ${navigation.status_code}` : "尚无动作状态";
+      const semantic = data.semantic_task || {};
+      const previewTarget = voice.execution_mode === "preview" ? voice.intent_target : "";
+      byId("semanticMain").textContent = diagnosticOnly ? "NOT STARTED" : previewTarget ? `${previewTarget} · 已解析（未执行）` : `${semantic.target_name || "未指定目标"} · ${semantic.status || "idle"}`;
+      byId("semanticDetail").textContent = diagnosticOnly
+        ? "只读诊断 profile 未启动语义目标解析"
+        : previewTarget ? (voice.intent_summary || "Pilot 语义预览已完成；未发出能力调用")
+        : semantic.message || (semantic.task_id ? `task ${semantic.task_id}` : "尚无语义任务状态");
+      byId("voiceDetail").textContent = voice.message || (voice.enabled ? "等待浏览器录音" : "浏览器语音入口未启用");
+      byId("voiceTranscript").textContent = voice.transcript ? `识别文本：${voice.transcript}` : "";
+      if (!voiceCapture) {
+        byId("voiceButton").className = "voice-button";
+        byId("voiceButton").disabled = !voice.enabled || Boolean(voice.active);
+        byId("voiceButton").textContent = !voice.enabled ? "语音入口未启用" : voice.active ? "Liaison 会话处理中…" : "点击开始录音";
+      }
+      renderPipeline(data);
+      renderTopics(data.topics);
+    }
+
+    async function refresh() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1800);
+      try {
+        const response = await fetch("/api/status", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        byId("globalAlert").style.display = "block";
+        byId("globalAlert").textContent = `面板状态读取失败：${error.message}`;
+        byId("rosPill").className = "pill error";
+        byId("rosText").textContent = "面板连接中断";
+      } finally {
+        clearTimeout(timeout);
+        window.setTimeout(refresh, 650);
+      }
+    }
+    window.addEventListener("resize", () => { drawLidar(latest?.lidar); drawMap(); });
+    loadVoiceContract().catch(showVoiceError).finally(refresh);
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+[contract]
+id      = "robonix/skill/semantic_navigation/navigate_landmark/status"
+version = "1"
+kind    = "skill"
+idl     = "semantic_navigation/srv/GetLandmarkNavigationStatus.srv"
+description = "Read the status of a semantic navigation run."
+
+[mode]
+type = "rpc"

@@ -1,0 +1,111 @@
+{
+  "schema_version": 3,
+  "purpose": "go2-source-clock-to-chrony-refclock",
+  "activation_authorized": false,
+  "evidence_bundle": {
+    "pcap_file": "REPLACE_CURRENT_SESSION_PCAP",
+    "pcap_sha256": "REPLACE_WITH_64_HEX_DIGEST"
+  },
+  "approved_writers": [
+    {
+      "topic": "/sportmodestate",
+      "writer_gid": "REPLACE_CURRENT_SESSION_WRITER_GID",
+      "rtps_participant_guid_prefix": "REPLACE_CURRENT_SESSION_GUID_PREFIX",
+      "source_ip": "REPLACE_PROVEN_GO2_SOURCE_IP",
+      "correlation_method": "pcap_rtps_guid_prefix_and_data_writer_entity_correlation",
+      "correlation_conclusion": "single_source_proven_by_rtps_data_writer",
+      "pcap_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "topic_info_file": "REPLACE_CURRENT_SESSION_TOPIC_INFO",
+      "topic_info_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "correlation_file": "REPLACE_CURRENT_SESSION_CORRELATION",
+      "correlation_sha256": "REPLACE_WITH_64_HEX_DIGEST"
+    }
+  ],
+  "pre_bootstrap_stability": {
+    "metadata_file": "REPLACE_TWO_HOUR_METADATA_JSON",
+    "metadata_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+    "summary_file": "REPLACE_TWO_HOUR_SUMMARY_JSON",
+    "summary_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+    "minimum_duration_ns": 7200000000000,
+    "observed_duration_ns": "REPLACE_WITH_VALUE_AT_LEAST_7200000000000",
+    "writer_gid": "REPLACE_CURRENT_SESSION_WRITER_GID",
+    "maximum_jitter_p95_ns": 20000000,
+    "maximum_absolute_drift_ppm": 500.0,
+    "maximum_duplicate_fraction": 0.1
+  },
+  "cold_boot_identity_trials": [
+    {
+      "trial_id": "cold-boot-1",
+      "operator_attestation": "physical-cold-boot-observed-and-read-only",
+      "current_session": false,
+      "boot_id_file": "REPLACE_TRIAL_1_BOOT_ID_FILE",
+      "boot_id_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "boot_id": "REPLACE_DISTINCT_UUID",
+      "pcap_file": "REPLACE_TRIAL_1_PCAP",
+      "topic": "/sportmodestate",
+      "writer_gid": "REPLACE_DISTINCT_WRITER_GID",
+      "rtps_participant_guid_prefix": "REPLACE_GUID_PREFIX",
+      "source_ip": "REPLACE_PROVEN_GO2_SOURCE_IP",
+      "correlation_method": "pcap_rtps_guid_prefix_and_data_writer_entity_correlation",
+      "correlation_conclusion": "single_source_proven_by_rtps_data_writer",
+      "pcap_sha256": "REPLACE_WITH_DISTINCT_64_HEX_DIGEST",
+      "topic_info_file": "REPLACE_TRIAL_1_TOPIC_INFO",
+      "topic_info_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "correlation_file": "REPLACE_TRIAL_1_CORRELATION",
+      "correlation_sha256": "REPLACE_WITH_64_HEX_DIGEST"
+    },
+    {
+      "trial_id": "cold-boot-2",
+      "operator_attestation": "physical-cold-boot-observed-and-read-only",
+      "current_session": false,
+      "boot_id_file": "REPLACE_TRIAL_2_BOOT_ID_FILE",
+      "boot_id_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "boot_id": "REPLACE_DISTINCT_UUID",
+      "pcap_file": "REPLACE_TRIAL_2_PCAP",
+      "topic": "/sportmodestate",
+      "writer_gid": "REPLACE_DISTINCT_WRITER_GID",
+      "rtps_participant_guid_prefix": "REPLACE_GUID_PREFIX",
+      "source_ip": "REPLACE_PROVEN_GO2_SOURCE_IP",
+      "correlation_method": "pcap_rtps_guid_prefix_and_data_writer_entity_correlation",
+      "correlation_conclusion": "single_source_proven_by_rtps_data_writer",
+      "pcap_sha256": "REPLACE_WITH_DISTINCT_64_HEX_DIGEST",
+      "topic_info_file": "REPLACE_TRIAL_2_TOPIC_INFO",
+      "topic_info_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "correlation_file": "REPLACE_TRIAL_2_CORRELATION",
+      "correlation_sha256": "REPLACE_WITH_64_HEX_DIGEST"
+    },
+    {
+      "trial_id": "cold-boot-current",
+      "operator_attestation": "physical-cold-boot-observed-and-read-only",
+      "current_session": true,
+      "boot_id_file": "REPLACE_CURRENT_BOOT_ID_FILE",
+      "boot_id_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "boot_id": "REPLACE_DISTINCT_UUID",
+      "pcap_file": "REPLACE_CURRENT_SESSION_PCAP",
+      "topic": "/sportmodestate",
+      "writer_gid": "REPLACE_CURRENT_SESSION_WRITER_GID",
+      "rtps_participant_guid_prefix": "REPLACE_CURRENT_SESSION_GUID_PREFIX",
+      "source_ip": "REPLACE_PROVEN_GO2_SOURCE_IP",
+      "correlation_method": "pcap_rtps_guid_prefix_and_data_writer_entity_correlation",
+      "correlation_conclusion": "single_source_proven_by_rtps_data_writer",
+      "pcap_sha256": "REPLACE_WITH_CURRENT_64_HEX_DIGEST",
+      "topic_info_file": "REPLACE_CURRENT_SESSION_TOPIC_INFO",
+      "topic_info_sha256": "REPLACE_WITH_64_HEX_DIGEST",
+      "correlation_file": "REPLACE_CURRENT_SESSION_CORRELATION",
+      "correlation_sha256": "REPLACE_WITH_64_HEX_DIGEST"
+    }
+  ],
+  "post_bootstrap_quality_gate": {
+    "reference_topic": "/sportmodestate",
+    "minimum_continuous_duration_ns": 300000000000,
+    "maximum_absolute_offset_ns_exclusive": 50000000,
+    "maximum_absolute_drift_ppm_exclusive": 100.0,
+    "maximum_observation_duration_ns": 900000000000,
+    "audit_file": "post-bootstrap-quality.json",
+    "samples_file": "post-bootstrap-quality-samples.jsonl",
+    "require_unsafe_latched_false": true,
+    "require_current_writer_authorized": true,
+    "require_feed_count_advancing": true,
+    "require_chronyd_go2_selected": true
+  }
+}

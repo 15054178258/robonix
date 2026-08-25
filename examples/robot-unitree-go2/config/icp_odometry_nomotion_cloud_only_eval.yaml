@@ -1,0 +1,40 @@
+/robonix/nomotion/icp_eval/icp_odometry:
+  ros__parameters:
+    # Diagnostic A/B profile: keep every ICP setting identical to the
+    # IMU-assisted evaluation, but make the IMU path explicitly unreachable.
+    # The runner remaps the generic imu input to a private, publisher-free
+    # topic and verifies that this DDS participant never subscribes to
+    # /scanner/imu.
+    frame_id: base_link
+    odom_frame_id: robonix_nomotion_icp_odom
+    publish_tf: false
+    publish_null_when_lost: true
+    use_sim_time: false
+
+    qos: 2
+    qos_imu: 2
+    wait_for_transform: 1.5
+    wait_imu_to_init: false
+    always_check_imu_tf: false
+    approx_sync: false
+    topic_queue_size: 30
+    sync_queue_size: 30
+
+    deskewing: false
+    deskewing_slerp: true
+    Reg/Strategy: "1"
+    Reg/Force3DoF: "true"
+    Icp/VoxelSize: "0.1"
+    Icp/PointToPlane: "true"
+    Icp/PointToPlaneK: "20"
+    Icp/PointToPlaneRadius: "0"
+    Icp/MaxCorrespondenceDistance: "0.20"
+    Icp/MaxTranslation: "0.20"
+    Icp/MaxRotation: "0.35"
+    Icp/CorrespondenceRatio: "0.01"
+    Odom/GuessMotion: "false"
+    Odom/ResetCountdown: "1"
+    Odom/ScanKeyFrameThr: "0.4"
+    OdomF2M/ScanSubtractRadius: "0.1"
+    OdomF2M/ScanMaxSize: "15000"
+    OdomF2M/BundleAdjustment: "false"
