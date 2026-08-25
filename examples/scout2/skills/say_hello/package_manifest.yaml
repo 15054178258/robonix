@@ -1,0 +1,24 @@
+manifestVersion: 1
+
+build: bash scripts/build.sh
+
+start: bash scripts/start.sh
+
+package:
+  name: "robonix.skill.say_hello"
+  version: 0.0.1
+  description: "TODO: describe what this skill package provides."
+  tags:
+    - skill
+    - robonix
+  maintainers:
+    - Your Name <you@example.com>
+  license: Apache-2.0
+
+capabilities:
+  - name: robonix/skill/say_hello/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/say_hello/say
+    path: capabilities/say.v1.toml
+
+depends: []
