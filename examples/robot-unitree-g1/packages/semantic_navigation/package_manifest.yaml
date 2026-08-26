@@ -1,0 +1,25 @@
+manifestVersion: 1
+
+package:
+  name: robonix.skill.unitree.g1.semantic_navigation
+  version: 0.1.0
+  description: Deterministic saved-landmark resolver that invokes the Robonix navigation service for G1.
+  license: Apache-2.0
+  tags: [skill, semantic, navigation, unitree, g1, chinese]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+capability_id: semantic_navigation
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+stop: bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/skill/semantic_navigation/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/semantic_navigation/navigate_landmark
+    path: capabilities/navigate_landmark.v1.toml
+  - name: robonix/skill/semantic_navigation/navigate_landmark/status
+    path: capabilities/navigate_landmark/status.v1.toml
+  - name: robonix/skill/semantic_navigation/navigate_landmark/cancel
+    path: capabilities/navigate_landmark/cancel.v1.toml

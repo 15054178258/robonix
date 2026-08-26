@@ -1,0 +1,33 @@
+schema_version: 2
+map_id: lab_g1
+# Replace from the same latched robonix/service/map/lifecycle sample used to
+# verify map_id. A generation change invalidates every map-frame coordinate.
+map_generation: 0
+frame_id: map
+landmarks:
+  - id: charging_station_front
+    name: 充电桩
+    kind: navigation
+    aliases:
+      - 充电
+      - 充电桩前面
+      - 充电座
+      - charging station
+      - charger
+    example_utterances:
+      - 走到充电桩前面
+      - 去充电
+      - 带我到充电桩那里
+    verified: false
+    arrival_radius: 0.40
+    pose:
+      x: 0.0
+      y: 0.0
+      yaw: 0.0
+    approach:
+      standoff_m: 0.80
+      note: "Replace pose with a collision-free robot base pose facing the charging station."
+    metadata:
+      measured_by: ""
+      measured_at: ""
+      source: unconfigured_template

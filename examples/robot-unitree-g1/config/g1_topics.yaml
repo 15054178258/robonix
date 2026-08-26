@@ -1,0 +1,20 @@
+schema_version: 1
+readonly_inputs:
+  low_state: [/rt/lowstate]
+standard_outputs:
+  odom: /odom
+  imu: /imu/data
+  lidar_cloud: /scanner/cloud
+  lidar_scan: /scanner/scan
+  camera_image: /camera/color/image_raw
+  camera_info: /camera/color/camera_info
+  camera_depth: /camera/aligned_depth_to_color/image_raw
+  map: /map
+  joint_states: /joint_states
+frames:
+  map: map
+  odom: odom
+  base: base_link
+  imu: imu
+  lidar: mid360_lidar
+  camera: front_camera

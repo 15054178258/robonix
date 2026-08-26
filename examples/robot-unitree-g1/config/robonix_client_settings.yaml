@@ -1,0 +1,12 @@
+# Workspace template for the official Robonix Client.
+robotHost: 127.0.0.1
+atlasPort: 50051
+liaisonEndpoint: ""
+userId: operator:g1
+recordSeconds: 30
+language: zh-CN
+micNodeId: ""
+micDeviceId: ""
+speakerNodeId: ""
+speakerDeviceId: ""
+ttsNodeId: ""

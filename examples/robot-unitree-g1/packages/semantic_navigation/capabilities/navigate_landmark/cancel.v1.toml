@@ -1,0 +1,9 @@
+[contract]
+id      = "robonix/skill/semantic_navigation/navigate_landmark/cancel"
+version = "1"
+kind    = "skill"
+idl     = "semantic_navigation/srv/CancelLandmarkNavigation.srv"
+description = "Cancel a semantic navigation run through the Robonix navigation service."
+
+[mode]
+type = "rpc"

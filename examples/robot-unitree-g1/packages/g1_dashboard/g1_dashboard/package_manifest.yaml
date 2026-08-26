@@ -1,0 +1,25 @@
+manifestVersion: 1
+
+package:
+  name: robonix.robot.unitree.go2.dashboard
+  version: 0.1.0
+  vendor: syswonder
+  description: Robonix provider for read-only Go2 telemetry and optional loopback Liaison voice handoff.
+  license: Apache-2.0
+  tags: [robot, unitree, go2, ui, telemetry, ros2, readonly]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+stop: bash scripts/stop.sh
+
+# Provider id in robonix_manifest.yaml must be exactly `go2_dashboard`, matching
+# Service(id="go2_dashboard", ...) in go2_dashboard/service.py.
+capabilities:
+  - name: robonix/service/telemetry/dashboard/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/service/telemetry/dashboard/status
+    path: capabilities/status.v1.toml
+
+depends: []
