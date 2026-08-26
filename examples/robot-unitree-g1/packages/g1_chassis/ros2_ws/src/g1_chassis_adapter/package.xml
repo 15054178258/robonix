@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>g1_chassis_adapter</name>
+  <version>0.1.0</version>
+  <description>G1 chassis ROS2 adapter — bridges /cmd_vel to the daemon IPC socket</description>
+  <maintainer email="zxq13204030517@163.com">Origamii520</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_runtime</buildtool_depend>
+
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

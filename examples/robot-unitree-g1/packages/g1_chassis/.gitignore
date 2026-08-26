@@ -1,9 +1,0 @@
-README.md
-package_manifest.yaml
-CMakeLists.txt
-g1_chassis/
-sdk_daemon/
-ros2_ws/
-scripts/
-config/
-tests/
