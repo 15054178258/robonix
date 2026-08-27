@@ -1,9 +1,6 @@
 [submodule "third_party/unitree_sdk2"]
 	path = third_party/unitree_sdk2
 	url = https://github.com/unitreerobotics/unitree_sdk2.git
-[submodule "third_party/unitree_ros2"]
-	path = third_party/unitree_ros2
-	url = https://github.com/unitreerobotics/unitree_ros2.git
 [submodule "third_party/service-map-rbnx"]
 	path = third_party/service-map-rbnx
 	url = https://github.com/syswonder/service-map-rbnx.git

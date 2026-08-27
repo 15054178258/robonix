@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
-"""Register the guarded G1 ROS topics with Robonix.
+"""g1_chassis — Unitree G1 chassis provider (SDK daemon + ROS2 adapter).
 
-This provider deliberately exposes no posture or direct movement RPC. Nav2 is
-the single intended owner of the continuous ``/cmd_vel`` stream, while the C++
-daemon independently enforces the physical motion gates.
+Starts the G1 SDK daemon and ROS2 adapter node, then registers with atlas
+as a primitive offering chassis/driver, twist_in and odom capabilities.
 """
-
 from __future__ import annotations
 
+import logging
 import os
-from pathlib import Path
 import signal
 import subprocess
+import time
+from pathlib import Path
 
 from robonix_api import Deferred, Err, Ok, Primitive
 
-from .runtime_config import (
-    ConfigError,
-    RuntimeConfig,
-    normalize_config,
-    prepare_private_directory,
+logging.basicConfig(
+    level=os.environ.get("G1_CHASSIS_LOG_LEVEL", "INFO"),
+    format="[g1_chassis] %(message)s",
 )
+log = logging.getLogger("g1_chassis")
 
 g1_chassis = Primitive(
     id="g1_chassis", namespace="robonix/primitive/chassis"
 )
+
 _package_root = Path(
     os.environ.get(
         "RBNX_PACKAGE_ROOT", str(Path(__file__).resolve().parents[1])
     )
 ).resolve()
-_params_file = _package_root / "config" / "adapter.yaml"
+
 _adapter_binary = (
     _package_root
     / "rbnx-build"
@@ -48,8 +48,7 @@ _daemon_binary = (
     / "bin"
     / "g1_loco_daemon"
 )
-_odom_endpoint = None
-_runtime: RuntimeConfig | None = None
+
 _processes: list[subprocess.Popen] = []
 
 
@@ -58,8 +57,7 @@ def _is_executable(path: Path) -> bool:
 
 
 def _stop_processes() -> None:
-    """Stop adapter first, then daemon; both are owned process groups."""
-    global _processes
+    """Stop adapter first, then daemon (reverse order)."""
     ordered = list(reversed(_processes))
     for process in ordered:
         if process.poll() is not None:
@@ -78,121 +76,138 @@ def _stop_processes() -> None:
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
             except ProcessLookupError:
                 pass
-    _processes = []
+    _processes.clear()
 
 
-def _spawn_runtime(runtime: RuntimeConfig) -> None:
-    prepare_private_directory(runtime.ipc_socket.parent)
-    environment = runtime.process_env()
+def _daemon_argv(socket_path: str) -> list[str]:
+    return [
+        str(_daemon_binary),
+        "--socket", socket_path,
+        "--max-vx", "0.5",
+        "--max-vy", "0.3",
+        "--max-wz", "2.0",
+    ]
 
-    if runtime.starts_sdk_daemon:
-        _processes.append(
-            g1_chassis.spawn(
-                runtime.daemon_argv(_daemon_binary),
-                env=runtime.sdk_daemon_env(_daemon_binary),
-                log="sdk-daemon.log",
-                cwd=_package_root,
-            )
-        )
-    _processes.append(
-        g1_chassis.spawn(
-            runtime.adapter_argv(_adapter_binary, _params_file),
-            env=environment,
-            log="adapter.log",
-            cwd=_package_root,
-        )
-    )
+
+def _daemon_env(socket_path: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env["G1_IPC_SOCKET"] = socket_path
+    sdk_lib = str(_package_root / "rbnx-build" / "sdk" / "install" / "lib")
+    env["LD_LIBRARY_PATH"] = sdk_lib + ":" + env.get("LD_LIBRARY_PATH", "")
+    return env
 
 
 @g1_chassis.on_init
 def initialize(config):
-    """Validate Driver config, spawn guarded processes, then declare topics."""
-    global _odom_endpoint, _runtime
+    """Start daemon + adapter, wait for odometry, then declare topics."""
+    global _processes
 
     _stop_processes()
-    _runtime = None
-    try:
-        runtime = normalize_config(config, os.environ, _package_root)
-    except ConfigError as error:
-        return Err(f"unsafe G1 chassis config: {error}")
+
+    socket_path = os.environ.get(
+        "G1_IPC_SOCKET",
+        str(Path.home() / ".robonix" / "g1_chassis.sock"),
+    )
+    os.makedirs(os.path.dirname(socket_path), exist_ok=True)
 
     if not _is_executable(_adapter_binary):
-        return Err(f"G1 adapter is not built: {_adapter_binary}")
-    if not _params_file.is_file():
-        return Err(f"G1 adapter parameter file is missing: {_params_file}")
-    if runtime.starts_sdk_daemon and not _is_executable(_daemon_binary):
-        return Err(f"G1 SDK daemon is not built: {_daemon_binary}")
+        return Err(f"adapter not built: {_adapter_binary}")
+    if not _is_executable(_daemon_binary):
+        return Err(f"daemon not built: {_daemon_binary}")
 
-    if runtime.starts_sdk_daemon and runtime.allow_motion:
-        # Require explicit motion permit directory on the deploy root
-        deploy_root = _package_root.parent.parent
-        permit_file = deploy_root / ".motion_permit"
-        if not permit_file.is_file():
-            return Err(
-                "G1 motion is enabled but no motion permit file exists; "
-                "create a non-empty .motion_permit in the deploy root"
-            )
+    # Start SDK daemon (non-motion mode — adapter handles safety)
+    daemon_env = _daemon_env(socket_path)
 
-    try:
-        _spawn_runtime(runtime)
-    except (OSError, ValueError) as error:
+    _processes.append(
+        g1_chassis.spawn(
+            _daemon_argv(socket_path),
+            env=daemon_env,
+            log="sdk-daemon.log",
+            cwd=str(_package_root),
+        )
+    )
+
+    # Wait for daemon to bind the socket (up to 3s)
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        if os.path.exists(socket_path):
+            break
+        time.sleep(0.1)
+
+    if not os.path.exists(socket_path):
         _stop_processes()
-        return Err(f"failed to start guarded G1 runtime: {error}")
+        return Err("g1_loco_daemon did not create socket within 3s")
 
+    if _processes[0].poll() is not None:
+        code = _processes[0].returncode
+        _stop_processes()
+        return Err(f"g1_loco_daemon exited with code {code}")
+
+    # Start ROS2 adapter (daemon env already has G1_IPC_SOCKET)
+    _processes.append(
+        g1_chassis.spawn(
+            [str(_adapter_binary)],
+            env=daemon_env,
+            log="adapter.log",
+            cwd=str(_package_root),
+        )
+    )
+
+    # Wait for adapter ROS topics to appear (up to 10s)
     try:
         odom_available = g1_chassis.wait_for_topic(
-            runtime.odom_topic,
+            "/odom",
             "nav_msgs/msg/Odometry",
-            runtime.startup_timeout_s,
+            10.0,
         )
-    except Exception as error:  # ROS graph/type setup failure
+    except Exception as error:
         _stop_processes()
-        return Err(f"failed while waiting for guarded odometry: {error}")
-    if not odom_available:
-        adapter_code = _processes[-1].poll() if _processes else None
-        _stop_processes()
-        if adapter_code is not None:
-            return Err(f"G1 adapter exited during startup with code {adapter_code}")
-        return Deferred(
-            f"guarded odometry topic {runtime.odom_topic} is not available"
-        )
-    if runtime.starts_sdk_daemon and _processes[0].poll() is not None:
-        daemon_code = _processes[0].returncode
-        _stop_processes()
-        return Err(f"G1 SDK daemon exited during startup with code {daemon_code}")
+        return Err(f"wait_for_topic failed: {error}")
 
+    if not odom_available:
+        code = _processes[-1].poll()
+        _stop_processes()
+        if code is not None:
+            return Err(f"adapter exited during startup with code {code}")
+        return Deferred("/odom topic /odom not available after adapter start")
+
+    # Check adapter didn't crash
+    if _processes[-1].poll() is not None:
+        code = _processes[-1].returncode
+        _stop_processes()
+        return Err(f"adapter exited with code {code}")
+
+    # Declare ROS2 topic capabilities with atlas.
+    # The *driver capability is auto-declared by _do_bootstrap() with
+    # Transport.GRPC — no manual declaration needed here.
     try:
-        _odom_endpoint = g1_chassis.create_subscription(
-            "robonix/primitive/chassis/odom",
-            topic=runtime.odom_topic,
-            msg_type="nav_msgs/msg/Odometry",
-            callback=lambda _message: None,
-            qos="best_effort",
-            declare=False,
-        )
         g1_chassis.declare_ros2_topic(
             "robonix/primitive/chassis/twist_in",
-            runtime.twist_in_topic,
+            "/cmd_vel",
             qos="reliable",
         )
         g1_chassis.declare_ros2_topic(
             "robonix/primitive/chassis/odom",
-            runtime.odom_topic,
+            "/odom",
             qos="reliable",
         )
     except Exception as error:
         _stop_processes()
-        return Err(f"failed to declare G1 chassis contracts: {error}")
-    _runtime = runtime
+        return Err(f"failed to declare chassis contracts: {error}")
+
+    log.info(
+        "G1 chassis initialized "
+        "(daemon pid=%d, adapter pid=%d)",
+        _processes[0].pid,
+        _processes[-1].pid,
+    )
     return Ok()
 
 
 @g1_chassis.on_shutdown
 def shutdown():
-    """Stop adapter before daemon; the spawn registry is a second cleanup."""
-    global _runtime
+    """Stop adapter and daemon."""
     _stop_processes()
-    _runtime = None
     return Ok()
 
 

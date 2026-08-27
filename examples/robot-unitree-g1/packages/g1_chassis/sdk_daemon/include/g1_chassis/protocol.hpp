@@ -25,24 +25,27 @@ enum class ReplyCode : uint8_t {
 };
 
 // ---- Command packet (adapter → daemon) ----
-struct CommandPacket {
+// __attribute__((packed)) prevents the compiler from inserting alignment
+// padding between uint8_t and int32_t fields — the wire format is a flat
+// byte stream, so every byte counts.
+struct __attribute__((packed)) CommandPacket {
   uint8_t type;        // PacketType::kCmd
   uint8_t sequence;    // monotonically increasing, wraps at 255
-  uint8_t reserved[6]; // reserved for alignment
   int32_t vx;          // scaled by 10000 (fixed-point)
   int32_t vy;          // scaled by 10000 (fixed-point)
   int32_t omega;       // scaled by 10000 (fixed-point)
+  uint8_t reserved[10]; // padding to reach 24 bytes
 };
 
 static_assert(sizeof(CommandPacket) == 24,
               "CommandPacket must be exactly 24 bytes for IPC");
 
 // ---- Reply packet (daemon → adapter) ----
-struct ReplyPacket {
+struct __attribute__((packed)) ReplyPacket {
   uint8_t type;        // PacketType::kReply
   uint8_t sequence;    // echoes CommandPacket.sequence
   uint8_t code;        // ReplyCode
-  uint8_t reserved[5]; // reserved
+  uint8_t reserved[9]; // reserved (total: 16 bytes)
   uint8_t armed;       // 1 if motion is armed, 0 otherwise
   uint8_t faulted;     // 1 if in fault state, 0 otherwise
   uint8_t reserved2[2];

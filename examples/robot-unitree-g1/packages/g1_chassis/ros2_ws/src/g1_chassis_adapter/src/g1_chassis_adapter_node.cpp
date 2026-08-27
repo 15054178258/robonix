@@ -1,8 +1,15 @@
 #include <cstring>
+#include <cerrno>
+#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <unistd.h>
 
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -10,6 +17,8 @@
 #include "std_msgs/msg/string.hpp"
 
 #include "g1_chassis/protocol.hpp"
+using g1_chassis::CommandPacket;
+using g1_chassis::PacketType;
 
 namespace g1_chassis_adapter {
 
@@ -25,8 +34,8 @@ class AdapterNode : public rclcpp::Node {
     socket_path_ = std::string(socket_env);
     RCLCPP_INFO(this->get_logger(), "IPC socket: %s", socket_path_.c_str());
 
-    // Open a non-blocking UNIX stream socket to the daemon.
-    socket_fd_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    // Open a non-blocking UNIX socket to the daemon.
+    socket_fd_ = ::socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (socket_fd_ < 0) {
       RCLCPP_FATAL(this->get_logger(), "socket() failed: %s", strerror(errno));
       std::exit(1);
@@ -99,7 +108,7 @@ class AdapterNode : public rclcpp::Node {
   }
 
  private:
-  static CommandPacket TwistToPacket(const geometry_msgs::msg::TwistStamped &msg) {
+  CommandPacket TwistToPacket(const geometry_msgs::msg::TwistStamped &msg) {
     CommandPacket pkt{};
     pkt.type = static_cast<uint8_t>(PacketType::kCmd);
     pkt.sequence = sequence_++;
@@ -119,6 +128,26 @@ class AdapterNode : public rclcpp::Node {
       last_twist_received_ = false;
       send_command(last_twist_);
     }
+
+    // Publish a stationary odometry heartbeat so the ROS2 graph is visible.
+    // The chassis primitive declares /odom with atlas; the real odometry
+    // stream will be provided by a future integration.
+    auto odom = std::make_unique<nav_msgs::msg::Odometry>();
+    const auto now = get_clock()->now();
+    odom->header.stamp = now;
+    odom->header.frame_id = odom_frame_;
+    odom->child_frame_id = base_frame_;
+    odom->pose.pose.position.x = 0.0;
+    odom->pose.pose.position.y = 0.0;
+    odom->pose.pose.position.z = 0.0;
+    odom->pose.pose.orientation.w = 1.0;
+    odom->twist.twist.linear.x = 0.0;
+    odom->twist.twist.linear.y = 0.0;
+    odom->twist.twist.linear.z = 0.0;
+    odom->twist.twist.angular.x = 0.0;
+    odom->twist.twist.angular.y = 0.0;
+    odom->twist.twist.angular.z = 0.0;
+    odom_pub_->publish(std::move(odom));
   }
 
   void send_command(const CommandPacket &cmd) {
@@ -135,6 +164,8 @@ class AdapterNode : public rclcpp::Node {
 
   std::string twist_in_topic_;
   std::string odom_topic_;
+  std::string odom_frame_{"odom"};
+  std::string base_frame_{"base_link"};
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;

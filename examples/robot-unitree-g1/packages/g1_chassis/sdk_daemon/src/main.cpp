@@ -139,8 +139,14 @@ Options ParseOptions(int argc, char **argv) {
   }
   if (!g1_chassis::MotionWatchdogDeploymentEligible(
           options.allow_motion, options.watchdog_ms)) {
-    throw std::runtime_error(
-        "motion profiles require the exact audited 300 ms watchdog");
+    if (options.allow_motion) {
+      throw std::runtime_error(
+          "motion profiles require the exact audited 300 ms watchdog");
+    }
+    // Non-motion mode: allow daemon to run without strict watchdog requirements.
+    // The watchdog check in DaemonCore::CheckWatchdog() is disabled when
+    // allow_motion is false.
+    std::cerr << "[g1-daemon] WARNING: motion-disabled mode (no deployment eligibility check)\n";
   }
   return options;
 }

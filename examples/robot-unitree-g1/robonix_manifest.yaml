@@ -11,7 +11,10 @@ catalog:
     - Origamii520 <zxq13204030517@163.com>
 
 env:
-  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  # Deployment root — "." when running locally (no external deploy dir).
+  ROBONIX_DEPLOY_DIR: "/home/szh/robonix-dev/robonix/examples/robot-unitree-g1"
+
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
 
   # G1 network interface (usually the ethernet port to the robot)
   G1_NETWORK_INTERFACE: "${G1_NETWORK_INTERFACE}"
@@ -126,7 +129,7 @@ primitive:
     url: https://github.com/syswonder/primitive-livox-mid360-lidar-rbnx
     branch: main
     config:
-      lidar_ip: 192.168.1.161
+      lidar_ip: 192.168.123.120
       host_ip: 192.168.1.50
       xfer_format: 0
       # Three attempts including cleanup stay below Soma's 90 s INIT deadline.
@@ -157,12 +160,12 @@ primitive:
   # ============================================================
   # Audio client bridge — browser-side audio relay for speech.
   # ============================================================
-  - name: audio_client_bridge
-    path: ${ROBONIX_SOURCE_PATH}/examples/webots/primitives/audio_client_bridge
-    config:
-      transport: reverse
-      listen_host: 127.0.0.1
-      listen_port: 60002
+  # - name: audio_client_bridge
+  #   path: ${ROBONIX_SOURCE_PATH}/examples/webots/primitives/audio_client_bridge
+  #   config:
+  #     transport: reverse
+  #     listen_host: 127.0.0.1
+  #     listen_port: 60002
 
 service:
   # ============================================================
@@ -214,7 +217,7 @@ service:
       params_file: config/nav2_params_g1.yaml
       bt_xml_file: config/navigate.xml
       bt_through_poses_xml_file: config/navigate_through_poses.xml
-      velocity_output_topic: "${ROBONIX_VELOCITY_OUTPUT_TOPIC}"
+      velocity_output_topic: /cmd_vel
       use_sim_time: false
       action_wait_s: 90.0
       provider_ids:
@@ -243,14 +246,14 @@ service:
   # ============================================================
   # Speech — wake-word detection and text-to-speech.
   # ============================================================
-  - name: speech
-    path: ${ROBONIX_SOURCE_PATH}/services/speech
-    config:
-      speech_backend: "${SPEECH_BACKEND}"
-      disable_whisper: true
-      tts_voice: zh-CN-XiaoxiaoNeural
-      default_speaker_provider_id: audio_client_bridge
-      wake_words: ["罗伯尼克斯", "罗伯特"]
+  # - name: speech
+  #   path: ${ROBONIX_SOURCE_PATH}/services/speech
+  #   config:
+  #     speech_backend: "${SPEECH_BACKEND}"
+  #     disable_whisper: true
+  #     tts_voice: zh-CN-XiaoxiaoNeural
+  #     default_speaker_provider_id: audio_client_bridge
+  #     wake_words: ["罗伯尼克斯", "罗伯特"]
 
   # ============================================================
   # Dashboard — operator web UI with camera stream, map, and
@@ -262,7 +265,7 @@ service:
       host: 127.0.0.1
       port: ${G1_DASHBOARD_PORT}
       camera_topic: /camera/color/image_raw
-      depth_topic: /camera/aligned_depth_to_color/image_raw
+      d435i_depth_topic: /camera/aligned_depth_to_color/image_raw
       cloud_topic: /scanner/cloud
       scan_topic: /scanner/scan
       map_topic: /map

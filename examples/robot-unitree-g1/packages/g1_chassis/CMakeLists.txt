@@ -10,7 +10,9 @@ option(G1_CHASSIS_BUILD_OFFLINE_TESTS "Build tests that never contact a robot" O
 if(G1_CHASSIS_BUILD_OFFLINE_TESTS)
   enable_testing()
   add_executable(g1_protocol_test tests/protocol_test.cpp)
-  target_include_directories(g1_protocol_test PRIVATE include)
+  target_include_directories(g1_protocol_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/sdk_daemon/include)
+  target_link_libraries(g1_protocol_test PRIVATE Catch2WithMain)
   target_compile_options(g1_protocol_test PRIVATE
     -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME g1_protocol_test COMMAND g1_protocol_test)

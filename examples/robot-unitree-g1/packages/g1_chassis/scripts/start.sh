@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
-# Start the G1 chassis provider.
+# Robonix entry point. Driver(DMD_INIT) config is consumed by the provider.
 set -euo pipefail
 
 PKG="${RBNX_PACKAGE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-DEPLOY_ROOT="${ROBONIX_DEPLOY_DIR:-$(cd "$PKG/../.." && pwd)}"
-source "$DEPLOY_ROOT/scripts/build_robonix_ros2_overlay.sh"
+cd "$PKG"
 
-echo "[g1/start] launching g1_chassis provider"
+# FastRTPS is the default ROS 2 RMW for Humble and must be active.
+if [ "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}" != "rmw_fastrtps_cpp" ]; then
+  echo "G1 chassis requires RMW_IMPLEMENTATION=rmw_fastrtps_cpp." >&2
+  exit 2
+fi
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-# shellcheck disable=SC1091
+set +u
+source /opt/ros/humble/setup.bash
 source "$PKG/rbnx-build/codegen/ros2_idl/install/setup.bash"
 source "$PKG/rbnx-build/ros/install/setup.bash"
+set -u
 
-exec python3 -m g1_chassis.main
+# Use a stable IPC socket path (matches g1_chassis Python fallback).
+export G1_IPC_SOCKET="${G1_IPC_SOCKET:-$HOME/.robonix/g1_chassis.sock}"
+mkdir -p "${G1_IPC_SOCKET%/*}"
+
+export PYTHONPATH="$(rbnx path robonix-api):$PKG:${PYTHONPATH:-}"
+
+exec python3.10 -m g1_chassis.main

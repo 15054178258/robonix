@@ -4,7 +4,7 @@
 # Dual arms: SDK2 joint command (no IK/grasp pipeline yet)
 
 urdf:
-  path: ./third_party/unitree_ros2/robots/g1_description/g1_29dof.urdf
+  path: ./g1_description/g1_29dof.urdf
   root_link: base_link
   model_name: unitree_g1
 
