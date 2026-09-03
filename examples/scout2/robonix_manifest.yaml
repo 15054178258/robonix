@@ -107,13 +107,13 @@ service:
       backend: sqlite
 
   # ── Speech ───────────────────────────────────────────────────────────
-  - name: speech
-    path: ${ROBONIX_SOURCE_PATH}/services/speech
-    config:
-      disable_whisper: true
-      funasr_device: cuda
-      tts_voice: zh-CN-XiaoxiaoNeural
-      default_speaker_provider_id: audio_driver
+  #- name: speech
+    #path: ${ROBONIX_SOURCE_PATH}/services/speech
+    #config:
+      #disable_whisper: true
+      #funasr_device: cuda
+      #tts_voice: zh-CN-XiaoxiaoNeural
+      #default_speaker_provider_id: audio_driver
 
   # # ── Voiceprint ───────────────────────────────────────────────────────
   # - name: voiceprint
@@ -168,7 +168,7 @@ service:
         map: mapping
         odom: scout2_chassis
         scan: scout2_lidar
-          #scan_cloud: scout2_lidar
+        scan_cloud: scout2_lidar
           #topic_remap:
           #scan: ""        
 

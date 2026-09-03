@@ -1,0 +1,202 @@
+# Scout2 Nav2 configuration.
+# Uses robonix_nav2_terminal plugins (GoalAwareNavfnPlanner) compiled in the nav2 Docker image.
+# Scout2 chassis: 0.925 x 0.38 m; wheel outer edge: 0.827 x 0.700 m.
+# Octagonal footprint covers chassis + all 4 wheels.
+# max linear 0.5 m/s, max angular 0.6 rad/s.
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 10.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "robonix_nav2_terminal::GoalAwareNavfnPlanner"
+      tolerance: 0.5
+      use_astar: true
+      allow_unknown: false
+      # 关键参数
+      allow_goal_in_obstacle: false   # 禁止目标落在障碍物内
+      goal_search_radius: 0.8         # 如果goal在障碍/膨胀区，在目标点周围0.8m搜索最近自由栅格，作为实际路径终点，实现停物体前方
+    GridBased_known:
+      tolerance: 2.0
+      allow_unknown: false
+    GridBased_unknown:
+      tolerance: 2.0
+      allow_unknown: false
+    tf_buffer_duration: 0.5
+
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    odom_topic: "__ROBONIX_ODOM_TOPIC__"
+    controller_frequency: 10.0
+    failure_tolerance: 5.0
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    # 只注册 RotationShimController；它负责起步/终点旋转，CMU 作为内嵌局部控制器。
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.1
+      movement_time_allowance: 30.0
+
+    general_goal_checker:
+      # 使用标准 SimpleGoalChecker，避免与 RotationShim 终点旋转冲突
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.40
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+    FollowPath:
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+
+      # RotationShim 参数
+      # 启用终点旋转
+      rotate_to_goal_heading: true
+      rotate_to_heading_angular_vel: 0.4
+      max_angular_accel: 0.8
+      # 滞回关系：进入阈值 > 退出阈值，避免反复进出旋转模式
+      angular_dist_threshold: 0.5
+      angular_disengage_threshold: 0.15
+      simulate_ahead_time: 1.0
+      max_cost_threshold: 254.0
+      rotate_to_heading_linear_vel: 0.0
+
+      # 内嵌 CMU 控制器。全局路径仍由 GridBased 产生；这里仅选择局部候选轨迹。
+      primary_controller: "robonix_nav2_terminal::CmuController"
+      obstacle_cloud_topic: "__ROBONIX_SCAN_CLOUD_TOPIC__"
+      # 留空时控制器从已安装插件包中读取 CMU 原始 paths/paths.ply。
+      candidate_paths_file: ""
+      vehicle_length: 0.93
+      vehicle_width: 0.80
+      footprint_padding: 0.08
+      adjacent_range: 4.25
+      # 原始 3D 雷达点云转换到 base_link 后的保留高度范围；须按实机雷达安装高度标定。
+      min_obstacle_z: 0.10
+      max_obstacle_z: 1.20
+      lookahead_distance: 0.50
+      global_plan_lookahead: 2.0
+      obstacle_voxel_size: 0.10
+      max_obstacle_points: 1200
+      # 与 2D 投影器同样排除车体内的自反射点。
+      self_filter_radius: 0.65
+      obstacle_timeout: 0.50
+      transform_timeout: 0.10
+      max_linear_speed: 0.5
+      max_angular_speed: 0.6
+      heading_gain: 1.8
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    bt_loop_duration: 50
+    default_server_timeout: 1000
+    default_bt_xml_filename: "__ROBONIX_BT_XML__"
+    default_nav_to_pose_bt_xml: "__ROBONIX_BT_XML__"
+    # 0.5s too short, TF lookup failures cause planning/control gaps
+    tf_buffer_duration: 10.0
+
+recoveries_server:
+  ros__parameters:
+    costmap_topic: global_costmap/costmap
+    footprint_topic: global_costmap/published_footprint
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 10.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      width: 5
+      height: 5
+      resolution: 0.05
+      # Octagonal footprint covering chassis + wheels (from URDF).
+      # Chassis corners: (±0.46, ±0.19). Wheel outer edges: x ±0.41, y ±0.35.
+      footprint: "[[0.46, 0.19], [0.41, 0.35], [-0.41, 0.35], [-0.46, 0.19], [-0.46, -0.19], [-0.41, -0.35], [0.41, -0.35], [0.46, -0.19]]"
+      footprint_padding: 0.02
+
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        footprint_clearing_enabled: true
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: "__ROBONIX_SCAN_TOPIC__"
+          sensor_frame: velodyne
+          max_obstacle_height: 2.0
+          marking: true
+          clearing: true
+          obstacle_range: 5.0
+          raytrace_range: 6.0
+          qos:
+            reliability: best_effort
+            durability: volatile
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        # Must be >= inscribed_radius of the octagonal footprint (~0.25m)
+        inflation_radius: 0.45
+        cost_scaling_factor: 10.0
+
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      global_frame: map
+      robot_base_frame: base_link
+      # Same octagonal footprint as local_costmap (chassis + wheels)
+      footprint: "[[0.46, 0.19], [0.41, 0.35], [-0.41, 0.35], [-0.46, 0.19], [-0.46, -0.19], [-0.41, -0.35], [0.41, -0.35], [0.46, -0.19]]"
+      footprint_padding: 0.05
+      update_frequency: 10.0
+      publish_frequency: 10.0
+      resolution: 0.05
+      rolling_window: false
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: "__ROBONIX_MAP_TOPIC__"
+        map_subscribe_transient_local: true
+        enabled: true
+        # Set to false to ignore static map obstacles (for testing only)
+        # enabled: false
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        footprint_clearing_enabled: true
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: "__ROBONIX_SCAN_TOPIC__"
+          sensor_frame: velodyne
+          max_obstacle_height: 2.0
+          marking: true
+          clearing: true
+          obstacle_range: 5.0
+          raytrace_range: 8.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.45
+        cost_scaling_factor: 10.0
+      always_send_full_costmap: true
+
+
+lifecycle_manager:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+    node_names:
+      - planner_server
+      - controller_server
+      - bt_navigator
+      - recoveries_server
