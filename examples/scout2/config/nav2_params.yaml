@@ -2,7 +2,7 @@
 # Uses robonix_nav2_terminal plugins (GoalAwareNavfnPlanner) compiled in the nav2 Docker image.
 # Scout2 chassis: 0.925 x 0.38 m; wheel outer edge: 0.827 x 0.700 m.
 # Octagonal footprint covers chassis + all 4 wheels.
-# max linear 0.3 m/s, max angular 0.6 rad/s.
+# max linear 0.5 m/s, max angular 0.6 rad/s.
 planner_server:
   ros__parameters:
     use_sim_time: false
@@ -68,11 +68,11 @@ controller_server:
       debug_trajectory_details: True
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.3
+      max_vel_x: 0.5
       max_vel_y: 0.0
       max_vel_theta: 0.6
       min_speed_xy: 0.0
-      max_speed_xy: 0.3
+      max_speed_xy: 0.5
       min_speed_theta: 0.0
       acc_lim_x: 0.8
       acc_lim_y: 0.0
