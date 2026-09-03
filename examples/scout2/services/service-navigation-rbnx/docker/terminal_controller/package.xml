@@ -6,6 +6,7 @@
   <maintainer email="dev@robonix.ai">Robonix</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>ament_index_cpp</depend>
   <depend>action_msgs</depend>
   <depend>angles</depend>
   <depend>dwb_core</depend>
@@ -21,7 +22,9 @@
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>sensor_msgs</depend>
   <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <export>

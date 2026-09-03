@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(robonix_nav2_terminal)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(angles REQUIRED)
 find_package(dwb_core REQUIRED)
@@ -17,7 +18,9 @@ find_package(nav2_util REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 
 add_library(robonix_nav2_goal_checker SHARED
@@ -50,6 +53,16 @@ ament_target_dependencies(robonix_nav2_goal_aware_planner
   geometry_msgs nav2_core nav2_costmap_2d nav2_navfn_planner nav_msgs pluginlib
   rclcpp rclcpp_lifecycle tf2 tf2_ros)
 
+add_library(robonix_nav2_cmu_controller SHARED
+  src/cmu_controller.cpp)
+target_compile_features(robonix_nav2_cmu_controller PUBLIC cxx_std_17)
+target_include_directories(robonix_nav2_cmu_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(robonix_nav2_cmu_controller
+  ament_index_cpp geometry_msgs nav2_core nav2_costmap_2d nav_msgs nav2_util pluginlib rclcpp
+  rclcpp_lifecycle sensor_msgs tf2 tf2_geometry_msgs tf2_ros)
+
 # Keep the GoalChecker library free of any dwb_core dependency. ControllerServer
 # loads goal checkers before controllers; preloading libdwb_core as a transitive
 # dependency prevents its plugin factory from registering with the later
@@ -58,11 +71,12 @@ pluginlib_export_plugin_description_file(nav2_core nav2_core_plugins.xml)
 pluginlib_export_plugin_description_file(dwb_core dwb_core_plugins.xml)
 
 install(TARGETS robonix_nav2_goal_checker robonix_nav2_dwb_critic
-  robonix_nav2_goal_aware_planner
+  robonix_nav2_goal_aware_planner robonix_nav2_cmu_controller
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
+install(DIRECTORY paths/ DESTINATION share/${PROJECT_NAME}/paths)
 install(FILES nav2_core_plugins.xml dwb_core_plugins.xml
   DESTINATION share/${PROJECT_NAME})
 
@@ -88,6 +102,6 @@ endif()
 
 ament_export_include_directories(include)
 ament_export_libraries(robonix_nav2_goal_checker robonix_nav2_dwb_critic
-  robonix_nav2_goal_aware_planner)
+  robonix_nav2_goal_aware_planner robonix_nav2_cmu_controller)
 ament_export_dependencies(nav2_core dwb_core nav2_navfn_planner)
 ament_package()

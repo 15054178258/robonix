@@ -12,3 +12,10 @@
     <description>Prefer known-space paths and reject unknown exposure above a bounded fallback budget.</description>
   </class>
 </library>
+<library path="robonix_nav2_cmu_controller">
+  <class name="robonix_nav2_terminal::CmuController"
+         type="robonix_nav2_terminal::CmuController"
+         base_class_type="nav2_core::Controller">
+    <description>CMU candidate-trajectory local controller guided by Nav2's global path.</description>
+  </class>
+</library>
