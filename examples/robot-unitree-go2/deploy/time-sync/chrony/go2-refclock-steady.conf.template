@@ -1,0 +1,5 @@
+# REVIEW/INSTALL MANUALLY ONLY.  Slew-only steady-state fragment.
+refclock SOCK /run/chrony/go2.sock refid GO2 poll 0 filter 64 prefer trust
+
+bindaddress 192.168.123.18
+allow 192.168.123.99/32

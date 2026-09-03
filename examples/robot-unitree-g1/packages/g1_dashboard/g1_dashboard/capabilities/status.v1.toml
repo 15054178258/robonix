@@ -1,0 +1,12 @@
+[contract]
+id = "robonix/service/telemetry/dashboard/status"
+version = "1"
+kind = "service"
+idl = "go2_dashboard/srv/GetDashboardStatus.srv"
+description = "Read the dashboard process, URL, ROS connection, and telemetry freshness status."
+
+[mode]
+type = "rpc"
+
+[semantics]
+stateless = true

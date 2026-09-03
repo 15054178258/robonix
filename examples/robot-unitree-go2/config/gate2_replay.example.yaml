@@ -1,0 +1,102 @@
+# Gate 2 template. Copy to config/gate2_replay.local.yaml and replace every
+# bag/map/phase/region value with measurements from a real read-only capture.
+# The local file is ignored by Git. The runner never infers or invents them.
+schema_version: 1
+name: go2-lab-obstacle-clear-cancel
+
+runtime:
+  # Dedicated non-zero domain. ROS_LOCALHOST_ONLY selects lo; Cyclone
+  # multicast is disabled without selecting the same interface a second time.
+  domain_id: 211
+  max_wall_seconds: 240
+  play_rate: 1.0
+  dashboard_port: 18092
+  startup_delay_s: 4.0
+  post_playback_grace_s: 1.0
+
+source:
+  # Keep real captures in this ignored repository-local directory. Never point
+  # this at an external/Windows mount or a live robot interface.
+  bag: rbnx-build/gate2/input/go2_gate2
+  # Only these recorded state/sensor topics are passed to `ros2 bag play`.
+  # Generated outputs and all motion topics are rejected by preflight.
+  replay_topics:
+    - topic: /odom
+      type: nav_msgs/msg/Odometry
+      required: true
+    - topic: /scanner/cloud
+      type: sensor_msgs/msg/PointCloud2
+      required: true
+    - topic: /imu/data
+      type: sensor_msgs/msg/Imu
+      required: true
+    - topic: /camera/color/image_raw
+      type: sensor_msgs/msg/Image
+      required: true
+    - topic: /tf
+      type: tf2_msgs/msg/TFMessage
+      required: true
+
+topics:
+  odom: /odom
+  cloud: /scanner/cloud
+  imu: /imu/data
+  camera: /camera/color/image_raw
+  tf: /tf
+  tf_static: /tf_static
+  scan: /scanner/scan
+  map: /map
+  local_costmap: /local_costmap/costmap
+  global_costmap: /global_costmap/costmap
+  nav_status: /navigate_to_pose/_action/status
+  cmd_vel: /cmd_vel
+
+frames:
+  map: map
+  odom: odom
+  base: base_link
+
+map:
+  database: rbnx-build/gate2/input/lab_go2.db
+  mode: localization
+
+# The bag is stationary: Nav2 may request velocity, but the no-op sink never
+# forwards it. Cancel occurs before the 20 s progress-checker timeout.
+goal:
+  x: 1.0
+  y: 0.0
+  yaw: 0.0
+  dispatch_at_s: 5.0
+  cancel_at_s: 22.0
+
+# Relative to the first positive /clock sample. The real capture must contain
+# these measured phases; adjust them rather than copying this example blindly.
+phases:
+  obstacle: [6.0, 10.0]
+  cleared: [11.0, 13.5]
+  sensor_gap: [15.0, 19.0]
+
+costmaps:
+  # nav_msgs/OccupancyGrid cost values used by Nav2's costmap publisher.
+  lethal_threshold: 100
+  min_marked_cells: 1
+  max_cleared_cells: 0
+  min_cleared_delta: 1
+  # Set the measured obstacle centre in each costmap frame.
+  local:
+    frame_id: odom
+    x: 0.8
+    y: 0.0
+    radius: 0.30
+  global:
+    frame_id: map
+    x: 0.8
+    y: 0.0
+    radius: 0.30
+
+stop:
+  zero_epsilon: 0.0001
+  grace_s: 0.75
+  velocity_timeout_s: 0.25
+  # Prevent a permanently-zero controller from being called a stop pass.
+  require_nonzero_before_gap: true

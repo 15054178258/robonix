@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "source": {
+    "kind": "fixture",
+    "sha256": "fixture-not-a-real-bag"
+  },
+  "isolation": {
+    "domain_id": 211,
+    "localhost_only": true
+  },
+  "processes": {
+    "cmd_vel_sink": {"started": true, "unexpected_exit": false},
+    "observer": {"started": true, "unexpected_exit": false},
+    "robot_state_publisher": {"started": true, "unexpected_exit": false},
+    "pointcloud_to_laserscan": {"started": true, "unexpected_exit": false},
+    "mapping": {"started": true, "unexpected_exit": false},
+    "nav2": {"started": true, "unexpected_exit": false},
+    "dashboard": {"started": true, "unexpected_exit": false}
+  },
+  "cmd_vel_sink": {
+    "topic": "/cmd_vel",
+    "subscribes_only": true,
+    "forwarded": 0,
+    "invalid_samples": 0,
+    "error": "",
+    "samples": [
+      {"t": 7.0, "x": 0.1, "y": 0.0, "z": 0.0},
+      {"t": 14.0, "x": 0.1, "y": 0.0, "z": 0.0},
+      {"t": 15.8, "x": 0.0, "y": 0.0, "z": 0.0},
+      {"t": 20.0, "x": 0.1, "y": 0.0, "z": 0.0},
+      {"t": 22.1, "x": 0.0, "y": 0.0, "z": 0.0}
+    ]
+  },
+  "observer": {
+    "counts": {
+      "map": 4,
+      "odom": 200,
+      "cloud": 180,
+      "scan": 180,
+      "imu": 500,
+      "camera": 60,
+      "nav_status": 4
+    },
+    "tf": {
+      "map_to_odom": true,
+      "odom_to_base": true
+    },
+    "navigation": {
+      "goal_sent": true,
+      "goal_accepted": true,
+      "cancel_requested": true,
+      "cancel_accepted": true,
+      "result": "CANCELED"
+    },
+    "scan_times": [1.0, 5.0, 10.0, 14.9, 19.1, 21.0],
+    "costmaps": {
+      "local": [
+        {"t": 7.0, "occupied_cells": 8, "frame_id": "odom"},
+        {"t": 12.0, "occupied_cells": 0, "frame_id": "odom"}
+      ],
+      "global": [
+        {"t": 7.0, "occupied_cells": 6, "frame_id": "map"},
+        {"t": 12.0, "occupied_cells": 0, "frame_id": "map"}
+      ]
+    },
+    "errors": []
+  },
+  "dashboard_snapshots": [
+    {
+      "read_only": true,
+      "telemetry_read_only": true,
+      "bridge": {"connected": true},
+      "topics": {
+        "camera": {"sequence": 1},
+        "point_cloud": {"sequence": 1},
+        "map": {"sequence": 1},
+        "odom": {"sequence": 1},
+        "pose_map": {"sequence": 1},
+        "nav_status": {"sequence": 1}
+      }
+    }
+  ]
+}

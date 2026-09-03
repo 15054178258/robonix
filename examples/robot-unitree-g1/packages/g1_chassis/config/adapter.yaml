@@ -1,0 +1,9 @@
+# Config for the ROS2 adapter — maps provider-configured topics to the
+# daemon's IPC socket path (resolved at runtime from G1_IPC_SOCKET env).
+
+g1_chassis_adapter:
+  ros__parameters:
+    twist_in_topic: /cmd_vel
+    twist_out_topic: /g1/cmd_vel
+    odom_topic: /odom
+    daemon_socket: ""  # set at runtime via G1_IPC_SOCKET env

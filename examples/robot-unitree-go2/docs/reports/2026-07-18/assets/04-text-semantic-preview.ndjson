@@ -1,0 +1,4 @@
+{"batch_result":null,"event_kind":3,"final_text":"","plan":null,"session_id":"fae1c6d4-dfc8-4798-b8ff-7fd98fce7026","status":{"message":"","state":0},"text_chunk":""}
+{"batch_result":null,"event_kind":6,"final_text":"","plan":null,"session_id":"fae1c6d4-dfc8-4798-b8ff-7fd98fce7026","status":null,"text_chunk":""}
+{"batch_result":null,"event_kind":4,"final_text":"已识别导航意图：自动售货机；GO2_ALLOW_MOTION=false；预览模式禁止执行；地标“自动售货机”尚无物理验证 approach Pose；map/localization/Nav2 就绪状态未通过；未调用 Robonix navigation、Nav2 或 Unitree API","plan":null,"session_id":"fae1c6d4-dfc8-4798-b8ff-7fd98fce7026","status":null,"text_chunk":""}
+{"batch_result":null,"event_kind":3,"final_text":"","plan":null,"session_id":"fae1c6d4-dfc8-4798-b8ff-7fd98fce7026","status":{"message":"","state":1},"text_chunk":""}

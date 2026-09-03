@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>go2_chassis_adapter</name>
+  <version>0.1.0</version>
+  <description>Fail-closed ROS 2 adapter for Unitree Go2 chassis state and velocity IPC.</description>
+  <maintainer email="zxq13204030517@163.com">Origamii520</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>diagnostic_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>unitree_go</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

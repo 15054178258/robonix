@@ -1,0 +1,21 @@
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.unitree.go2.sensors
+  version: 0.1.0
+  description: Read-only Unitree Go2 lidar, IMU, and camera adapters for ROS 2 Humble.
+  license: Apache-2.0 AND BSD-3-Clause AND MIT AND (EPL-2.0 OR EDL-1.0)
+  tags: [primitive, unitree, go2, sensor, lidar3d, imu, camera, ros2]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+build: bash build.sh
+start: bash start.sh
+
+capabilities:
+  # The lidar lifecycle contract owns this multi-sensor provider's read-only
+  # initialization. Other contracts are ROS 2 data-plane declarations.
+  - name: robonix/primitive/lidar/driver
+  - name: robonix/primitive/lidar/lidar3d
+  - name: robonix/primitive/imu/imu
+  - name: robonix/primitive/camera/rgb

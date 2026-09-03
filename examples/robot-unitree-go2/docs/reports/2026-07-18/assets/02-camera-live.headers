@@ -1,0 +1,7 @@
+HTTP/1.1 200 OK
+date: Sat, 18 Jul 2026 12:48:56 GMT
+server: uvicorn
+cache-control: no-store
+x-telemetry-sequence: 461
+content-length: 141319
+content-type: image/jpeg

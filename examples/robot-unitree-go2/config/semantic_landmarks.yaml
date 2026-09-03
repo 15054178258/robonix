@@ -1,0 +1,36 @@
+schema_version: 2
+map_id: lab_go2
+# Replace from the same latched robonix/service/map/lifecycle sample used to
+# verify map_id. A generation change invalidates every map-frame coordinate.
+map_generation: 0
+frame_id: map
+landmarks:
+  - id: vending_machine_front
+    name: 自动售货机
+    kind: navigation
+    aliases:
+      - 售货机
+      - 自动贩卖机
+      - 贩卖机
+      - vending machine
+    # The full utterance is intentionally included in deterministic tests;
+    # substring matching also handles normal ASR punctuation/spacing variants.
+    example_utterances:
+      - 走到前面自动售货机那里
+      - 去自动售货机前面
+      - 带我到售货机那里
+    verified: false
+    # Metres. This is descriptive semantic-arrival metadata; the current
+    # navigation RPC still receives the exact point pose below.
+    arrival_radius: 0.35
+    pose:
+      x: 0.0
+      y: 0.0
+      yaw: 0.0
+    approach:
+      standoff_m: 0.80
+      note: "Replace pose with a collision-free robot base pose facing the vending machine; never use the object centre."
+    metadata:
+      measured_by: ""
+      measured_at: ""
+      source: unconfigured_template

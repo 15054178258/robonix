@@ -1,0 +1,16 @@
+**
+
+!deploy/
+!deploy/time-sync/
+!deploy/time-sync/go2_time_core.py
+!deploy/time-sync/go2_clock_ref.py
+!deploy/time-sync/post_bootstrap_quality_gate.py
+!deploy/jetson-time-sync/
+!deploy/jetson-time-sync/config/
+!deploy/jetson-time-sync/config/**
+!deploy/jetson-time-sync/entrypoint.sh
+!deploy/jetson-time-sync/healthcheck.sh
+!deploy/jetson-time-sync/validate-network.sh
+
+!scripts/
+!scripts/probe_go2_time_readonly.py

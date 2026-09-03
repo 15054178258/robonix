@@ -1,0 +1,52 @@
+profileVersion: 1
+id: jetson-full-nomotion
+platform:
+  architecture: arm64
+  operating_system: ubuntu-22.04
+  ros_distribution: humble
+  jetpack_baseline: 5.1.1
+
+# This is immutable for the current image.  A future runtime implementation
+# needs a new reviewed profile and image; an environment variable may not turn
+# this blueprint into a deployable runtime.
+runtime:
+  complete: false
+  launch_allowed: false
+  reason: missing-verified-arm64-robonix-runtime
+  required_artifacts:
+    - path: /opt/robonix/source
+      status: missing
+    - path: /opt/robonix/models/funasr-zh-online/model.pt
+      status: missing
+    - path: /opt/robonix/deploy/third_party/service-map-rbnx/rbnx-build/codegen
+      status: missing
+    - path: /opt/robonix/deploy/third_party/service-navigation-rbnx/rbnx-build/codegen
+      status: missing
+
+motion:
+  enabled: false
+  chassis_sdk_daemon: excluded
+  unitree_sport_client: excluded
+  canonical_cmd_vel_publisher: forbidden
+  sport_request_client: forbidden
+  low_level_command_publisher: forbidden
+  navigation_velocity_output: /robonix/nomotion/cmd_vel
+
+deployment:
+  manifest: /opt/robonix/deploy/robonix_manifest.yaml
+  mapping_manifest: package_manifest.jetson-native.yaml
+  navigation_manifest: package_manifest.jetson-native.yaml
+  robot_interface: eth0
+  robot_interface_cidr: 192.168.123.18/24
+  ui_bind: 127.0.0.1
+
+build_gates:
+  - exact-arm64-jetson-readonly-base-image
+  - arm64-robonix-cli-and-system-binaries
+  - arm64-rbnx-codegen-output
+  - arm64-python-and-rust-dependency-locks
+  - arm64-speech-backend-and-model-assets
+  - copied-and-validated-soma-configuration
+  - native-mapping-and-navigation-runtime-build
+  - process-supervisor-and-freshness-healthcheck
+  - ten-minute-and-two-hour-time-gate

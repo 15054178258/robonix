@@ -1,0 +1,50 @@
+schema_version: 1
+
+scenario:
+  id: go2_vending_machine_voice_offline
+  utterance: "走到前面自动售货机那里"
+
+asr_final:
+  # Mirrors the Robonix streaming speech result shape: event_type=1 and
+  # is_final=true mean Liaison may submit the accumulated transcript.
+  event_type: 1
+  text: "走到前面自动售货机那里"
+  confidence: 1.0
+  is_final: true
+
+pilot_selection:
+  # This is a deterministic stand-in for Pilot's RTDL selection. The runner
+  # loads the contract id from the real capability TOML before using it.
+  argument_name: "自动售货机"
+
+active_map:
+  map_id: lab_go2_offline_fixture
+  generation: 17
+  mode: localization
+
+landmark_document:
+  schema_version: 2
+  map_id: lab_go2_offline_fixture
+  map_generation: 17
+  frame_id: map
+  landmarks:
+    - id: vending_machine_front
+      name: "自动售货机"
+      aliases: ["售货机", "自动贩卖机"]
+      verified: true
+      pose:
+        x: 4.25
+        y: -1.50
+        yaw: 1.5707963267948966
+      metadata:
+        fixture_only: true
+        approach: front
+
+fake_navigation:
+  run_id: nav-offline-0001
+  accepted_detail: "accepted by in-memory Robonix navigation fixture"
+  statuses:
+    - state: RUNNING
+      detail: "planner/controller fixture is running"
+    - state: SUCCEEDED
+      detail: "goal tolerance reached in fixture"

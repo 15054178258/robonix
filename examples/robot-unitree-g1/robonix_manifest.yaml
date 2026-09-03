@@ -1,0 +1,300 @@
+manifestVersion: 1
+name: robonix-g1-deploy
+
+catalog:
+  name: robonix.robot.unitree.g1
+  version: 0.1.0
+  description: Robonix deployment for the Unitree G1 humanoid robot with Mid-360 LiDAR, RealSense D435i depth camera, and SDK2 locomotion control.
+  license: Apache-2.0
+  tags: [robot, deploy, unitree, g1, humanoid, lidar, rgbd, arm, locomotion, sdk2]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+env:
+  # Deployment root — "." when running locally (no external deploy dir).
+  ROBONIX_DEPLOY_DIR: "/home/szh/robonix-dev/robonix/examples/robot-unitree-g1"
+
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+  # G1 network interface (usually the ethernet port to the robot)
+  G1_NETWORK_INTERFACE: "${G1_NETWORK_INTERFACE}"
+
+  # Motion gate — set to false for read-only / operator-supervised mode
+  G1_ALLOW_MOTION: "${G1_ALLOW_MOTION}"
+
+  # Mapping directory
+  MAPPING_MAPS_DIR: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/maps
+
+  # Scene data directories
+  SCENE_OBJECT_MEMORY_DB: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/scene/objects.db
+  SCENE_GRAPH_CACHE_DIR: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/scene/graph
+  SCENE_ANNOTATIONS_DIR: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/scene/annotations
+
+  # Hosts — bind to 127.0.0.1 when the robot has a separate control network;
+  # change to 0.0.0.0 when running on a Jetson attached to the operator network.
+  ROBONIX_PROVIDER_BIND_HOST: 127.0.0.1
+  ROBONIX_ADVERTISE_HOST: 127.0.0.1
+  MAPPING_WEBUI_HOST: 127.0.0.1
+  SCENE_WEB_HOST: 127.0.0.1
+
+  ROBONIX_SCENE_ROS_DISTRO: humble
+
+  # The G1 is CPU-only (no NVIDIA GPU in the torso). Force CPU backends
+  # for Scene and any inference pipelines.
+  ROBONIX_FORCE_CPU: "1"
+  SCENE_CG_FORCE_CPU: "1"
+
+  SCENE_MAP_ID: "${G1_MAP_ID}"
+
+  # Speech backend — local FunASR or cloud Tencent ASR
+  SPEECH_BACKEND: "${SPEECH_BACKEND}"
+
+  # Cache directories inside the deployment so model weights never touch
+  # a global user home that would be absent from the deployable artifact.
+  XDG_CACHE_HOME: ${ROBONIX_DEPLOY_DIR}/.cache/xdg
+  MODELSCOPE_CACHE: ${ROBONIX_DEPLOY_DIR}/.cache/modelscope
+  MODELSCOPE_CREDENTIALS_PATH: ${ROBONIX_DEPLOY_DIR}/.cache/modelscope/credentials
+  HF_HOME: ${ROBONIX_DEPLOY_DIR}/.cache/huggingface
+  TORCH_HOME: ${ROBONIX_DEPLOY_DIR}/.cache/torch
+
+  # Dashboard port
+  G1_DASHBOARD_PORT: "${G1_DASHBOARD_PORT}"
+
+  # VLM endpoint (for pilot / scene)
+  VLM_BASE_URL: "${VLM_BASE_URL}"
+  VLM_API_KEY: "${VLM_API_KEY}"
+  VLM_MODEL: "${VLM_MODEL}"
+
+system:
+  atlas: {listen: 0.0.0.0:50051, log: info}
+  executor: {listen: 0.0.0.0:50061, log: info}
+  pilot:
+    listen: 0.0.0.0:50071
+    log: info
+    vlm:
+      upstream: ${VLM_BASE_URL}
+      api_key: ${VLM_API_KEY}
+      model: ${VLM_MODEL}
+      api_format: openai
+  liaison: {listen: 0.0.0.0:50081, log: info}
+  soma:
+    listen: 0.0.0.0:50091
+    provider_id: soma
+    robot_yaml: ${ROBONIX_DEPLOY_DIR}/soma.yaml
+    log: info
+  scene:
+    log: info
+    web_host: 0.0.0.0
+    web_port: 50107
+
+primitive:
+  # ============================================================
+  # Chassis — wraps the Unitree SDK2 LocoClient RPC API (sport service)
+  # for high-level bipedal locomotion: FSM state machine (stand /
+  # balance / damp / squat), velocity walk commands, and height /
+  # swing parameters.  Internally subscribes to rt/lowstate for
+  # odometry and joint-state feedback.
+  # ============================================================
+  - name: g1_chassis
+    path: ${ROBONIX_DEPLOY_DIR}/packages/g1_chassis
+    config:
+      twist_in_topic: /cmd_vel
+      odom_topic: /odom
+      odom_source: base_controller
+      publish_odom_tf: true
+      joint_state_topic: /joint_states
+      odom_frame: odom
+      base_frame: base_link
+      imu_frame: imu
+      velocity_frame: odom
+      network_interface: ${G1_NETWORK_INTERFACE}
+      allow_motion: ${G1_ALLOW_MOTION}
+      # Loco API parameters
+      stand_height: 0.55
+      swing_height: 0.08
+      max_linear_x_mps: 1.0
+      max_linear_y_mps: 0.5
+      max_angular_z_rps: 2.0
+      max_linear_accel_mps2: 1.5
+      max_angular_accel_rps2: 3.0
+      command_timeout_s: 0.5
+      state_timeout_s: 0.5
+
+  # ============================================================
+  # Sensors — Livox Mid-360 LiDAR / IMU (read via UDP directly from
+  # the head-mounted sensor) + Intel RealSense D435i depth camera.
+  # Follows the same pattern as the ranger_mini_v3 manifest.
+  # ============================================================
+  - name: mid360_lidar
+    url: https://github.com/syswonder/primitive-livox-mid360-lidar-rbnx
+    branch: main
+    config:
+      lidar_ip: 192.168.123.120
+      host_ip: 192.168.1.50
+      xfer_format: 0
+      # Three attempts including cleanup stay below Soma's 90 s INIT deadline.
+      sentinel_timeout_s: 20.0
+
+  - name: mid360_imu
+    url: https://github.com/syswonder/primitive-livox-mid360-imu-rbnx
+    branch: main
+    config:
+      sentinel_timeout_s: 45.0
+
+  - name: realsense_camera
+    url: https://github.com/syswonder/primitive-intel-realsense_d435i-camera-rbnx
+    branch: main
+    config:
+      depth_profile: 640x480x30
+      enable_imu: false
+      sentinel_timeout_s: 45.0
+
+  # ============================================================
+  # Robot description — publishes /robot_description and the TF tree.
+  # ============================================================
+  - name: robot_description
+    url: https://github.com/syswonder/primitive-robot-description-rbnx
+    branch: main
+    manifest: package_manifest.native.yaml
+
+  # ============================================================
+  # Audio client bridge — browser-side audio relay for speech.
+  # ============================================================
+  # - name: audio_client_bridge
+  #   path: ${ROBONIX_SOURCE_PATH}/examples/webots/primitives/audio_client_bridge
+  #   config:
+  #     transport: reverse
+  #     listen_host: 127.0.0.1
+  #     listen_port: 60002
+
+service:
+  # ============================================================
+  # Mapping — RTAB-Map 3D mapping with Mid-360 LiDAR + depth fusion.
+  # ============================================================
+  - name: mapping
+    path: ${ROBONIX_DEPLOY_DIR}/third_party/service-map-rbnx
+    config:
+      algo: rtabmap
+      base_frame: base_link
+      odom_frame: odom
+      use_sim_time: false
+      webui_host: 127.0.0.1
+      webui_port: 8091
+      map_id: "${G1_MAP_ID}"
+      map_mode: "${G1_MAP_MODE}"
+      deskew_lidar: true
+      dense_scan_2d: true
+      dense_scan_refine_neighbors: true
+      params_file: config/rtabmap_params.yaml
+      rtabmap_params:
+        Reg/Strategy: 1
+        Reg/Force3DoF: true
+        RGBD/NeighborLinkRefining: true
+        RGBD/ProximityBySpace: false
+        RGBD/ProximityPathMaxNeighbors: 0
+        Icp/PointToPlane: true
+        Icp/PointToPlaneK: 5
+        Icp/PointToPlaneMinComplexity: 0.02
+        Icp/PointToPlaneLowComplexityStrategy: 1
+        Icp/CorrespondenceRatio: 0.20
+        Icp/MaxTranslation: 0.10
+        Icp/MaxRotation: 0.10
+      rtabmap_inputs: [lidar, imu, odom]
+      sensor_providers:
+        lidar3d: mid360_lidar
+        imu: mid360_imu
+        odom: g1_chassis
+        rgb: realsense_camera
+        depth: realsense_camera
+
+  # ============================================================
+  # Navigation 2 — bipedal-safe Nav2 with height-aware scan projection
+  # (tall legs and torso clearance require adjusted min/max heights).
+  # ============================================================
+  - name: nav2
+    path: ${ROBONIX_DEPLOY_DIR}/third_party/service-navigation-rbnx
+    config:
+      params_file: config/nav2_params_g1.yaml
+      bt_xml_file: config/navigate.xml
+      bt_through_poses_xml_file: config/navigate_through_poses.xml
+      velocity_output_topic: /cmd_vel
+      use_sim_time: false
+      action_wait_s: 90.0
+      provider_ids:
+        map: mapping
+        odom: g1_chassis
+        scan_cloud: mid360_lidar
+      scan_projection:
+        enabled: true
+        target_frame: base_link
+        # G1 humanoid: tall torso and legs — keep obstacles below the
+        # foot level while rejecting most floor returns.
+        min_height_m: -0.25
+        max_height_m: 1.50
+        range_max_m: 12.0
+        self_filter_margin_m: 0.05
+        transform_tolerance_s: 0.20
+        deskewing: false
+        deskew_fixed_frame: odom
+      # G1 walks slower than a wheeled robot; tune stuck detection.
+      guard_terminal_xy_m: 0.20
+      guard_terminal_timeout_s: 15.0
+      guard_no_progress_s: 8.0
+      guard_global_spin_timeout_s: 18.0
+      guard_global_spin_limit_rad: 4.20
+
+  # ============================================================
+  # Speech — wake-word detection and text-to-speech.
+  # ============================================================
+  # - name: speech
+  #   path: ${ROBONIX_SOURCE_PATH}/services/speech
+  #   config:
+  #     speech_backend: "${SPEECH_BACKEND}"
+  #     disable_whisper: true
+  #     tts_voice: zh-CN-XiaoxiaoNeural
+  #     default_speaker_provider_id: audio_client_bridge
+  #     wake_words: ["罗伯尼克斯", "罗伯特"]
+
+  # ============================================================
+  # Dashboard — operator web UI with camera stream, map, and
+  # navigation controls specific to the G1 humanoid.
+  # ============================================================
+  - name: g1_dashboard
+    path: ${ROBONIX_DEPLOY_DIR}/packages/g1_dashboard
+    config:
+      host: 127.0.0.1
+      port: ${G1_DASHBOARD_PORT}
+      camera_topic: /camera/color/image_raw
+      d435i_depth_topic: /camera/aligned_depth_to_color/image_raw
+      cloud_topic: /scanner/cloud
+      scan_topic: /scanner/scan
+      map_topic: /map
+      pose_topic: /robonix/map/pose
+      odom_topic: /odom
+      nav_status_topic: /navigate_to_pose/_action/status
+      initial_pose_topic: /initialpose
+      map_lifecycle_topic: /robonix/map/lifecycle
+      initial_pose_maps_dir: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/maps
+      initial_pose_auto_restore: false
+      map_frame: map
+      base_frame: base_link
+      browser_voice_enabled: "${G1_DASHBOARD_BROWSER_VOICE_ENABLED}"
+      liaison_endpoint: 127.0.0.1:50081
+      audio_bridge_url: ws://127.0.0.1:60002/client
+      browser_mic_provider: audio_client_bridge
+
+skill:
+  - name: semantic_navigation
+    path: ${ROBONIX_DEPLOY_DIR}/packages/semantic_navigation
+    config:
+      landmarks_file: ${SEMANTIC_LANDMARKS_FILE}
+      expected_map_id: "${G1_MAP_ID}"
+      navigation_provider_id: nav2
+      mapping_provider_id: mapping
+      require_verified: true
+      rpc_timeout_s: 10.0
+      lifecycle_wait_s: 10.0
+      cancel_retry_s: 3.0
+      status_endpoint: "http://127.0.0.1:${G1_DASHBOARD_PORT}/api/semantic-task"
+      status_timeout_s: 0.5
+      nav_status_poll_s: 0.5

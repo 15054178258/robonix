@@ -1,0 +1,60 @@
+go2_chassis_adapter:
+  ros__parameters:
+    # This committed default is intentionally fail-closed. Only the Robonix
+    # provider may override it after all runtime acknowledgement gates pass.
+    allow_motion: false
+    sport_state_topic: /sportmodestate
+    state_fallback_topic: /lf/sportmodestate
+    # The following control-side names/rate remain inert while allow_motion is
+    # false: the passive adapter does not declare or construct their entities.
+    cmd_vel_topic: /cmd_vel
+    odom_topic: /odom
+    # sport_state preserves the isolated first-motion commissioning path.
+    # external_verified subscribes only to the private, time-corrected lidar
+    # odometry topic and makes this adapter the sole /odom + TF authority.
+    odom_source: sport_state
+    external_odom_topic: /robonix/time_corrected/raw/utlidar/robot_odom
+    external_odom_timeout_sec: 0.20
+    max_external_odom_yaw_jump_rad: 1.0
+    # The chassis owns odom -> base_link by default. Only legacy sport_state
+    # passive diagnostics may disable it; external_verified requires this true.
+    publish_odom_tf: true
+    imu_topic: /imu/data
+    status_topic: /go2_chassis/status
+    diagnostics_topic: /diagnostics
+    arm_service: /go2_chassis/arm
+    odom_frame: odom
+    base_frame: base_link
+    imu_frame: imu
+    state_velocity_frame: odom
+    sdk_socket: /tmp/robonix-go2-disabled.sock
+    # Unitree's public source does not define SportModeState.mode semantics.
+    # 255 is an impossible sentinel until GO2_ALLOWED_MODES is audited.
+    allowed_modes: [255]
+    # Non-zero error_code values stay blocked unless the provider injects an
+    # explicit operator-audited opaque marker allowlist. Do not place an empty
+    # sequence here: ROS 2 cannot infer the element type of [] while parsing a
+    # parameter file. The node's declared vector<int64> default is empty, and
+    # the provider supplies a typed non-empty CLI override only after evidence
+    # validation. A value change still latches closed.
+    # Only the dedicated external_verified, motion-disabled manual-mapping
+    # manifest may explicitly override this. Motion-capable profiles reject it.
+    allow_passive_state_marker_transitions: false
+    # The staged Nav2 renderer may separately enable only the measured Classic
+    # 100 <-> 2010 pair from its runtime allowlist. All other profiles and this
+    # committed default remain fail-closed.
+    allow_motion_state_marker_transitions: false
+    state_timeout_sec: 0.20
+    # Canonical odom/TF/IMU and the motion watchdog share this source-clock
+    # gate. Clock synchronization must be fixed rather than masking stale data.
+    max_source_stamp_age_sec: 0.20
+    max_source_stamp_future_skew_sec: 0.05
+    command_timeout_sec: 0.25
+    zero_preparation_sec: 0.50
+    control_rate_hz: 50.0
+    max_vx: 0.30
+    max_vy: 0.0
+    max_wz: 0.40
+    max_linear_acceleration: 0.30
+    max_angular_acceleration: 0.80
+    max_position_jump_m: 1.0

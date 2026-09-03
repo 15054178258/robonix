@@ -1,0 +1,41 @@
+{
+  "algo": "rtabmap",
+  "base_frame": "base_link",
+  "dense_scan_2d": true,
+  "dense_scan_refine_neighbors": true,
+  "deskew_lidar": true,
+  "map_mode": "mapping",
+  "odom_frame": "odom",
+  "params_file": "config/rtabmap_params.yaml",
+  "reset_map": true,
+  "rtabmap_inputs": [
+    "lidar",
+    "imu",
+    "odom"
+  ],
+  "rtabmap_params": {
+    "Icp/CorrespondenceRatio": 0.20,
+    "Icp/MaxCorrespondenceDistance": 0.15,
+    "Icp/MaxRotation": 0.10,
+    "Icp/MaxTranslation": 0.10,
+    "Icp/PointToPlane": true,
+    "Icp/PointToPlaneK": 5,
+    "Icp/PointToPlaneLowComplexityStrategy": 1,
+    "Icp/PointToPlaneMinComplexity": 0.02,
+    "Icp/RangeMax": 6.0,
+    "Icp/RangeMin": 0.492,
+    "RGBD/NeighborLinkRefining": true,
+    "RGBD/ProximityBySpace": false,
+    "RGBD/ProximityPathMaxNeighbors": 0,
+    "Reg/Force3DoF": true,
+    "Reg/Strategy": 1
+  },
+  "sensor_providers": {
+    "imu": "go2_sensors",
+    "lidar3d": "go2_sensors",
+    "odom": "go2_chassis"
+  },
+  "use_sim_time": false,
+  "webui_host": "127.0.0.1",
+  "webui_port": 8091
+}

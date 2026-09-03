@@ -1,0 +1,19 @@
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.unitree.go2.description
+  version: 0.1.0
+  description: Publishes the pinned Soma-owned Unitree Go2 URDF as the ROS 2 TF tree using CycloneDDS.
+  tags: [primitive, unitree, go2, robot-description, urdf, tf, ros2, cyclonedds]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+  license: Apache-2.0 AND BSD-3-Clause
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+stop: bash scripts/stop.sh
+
+capabilities:
+  - name: robonix/primitive/robot_description/driver
+
+depends: []

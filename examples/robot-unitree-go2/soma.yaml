@@ -1,0 +1,115 @@
+urdf:
+  path: ./packages/go2_description/urdf/go2_robonix.urdf
+  root_link: base_link
+  model_name: unitree_go2
+
+robot:
+  id: unitree_go2_01
+  display_name: "Unitree Go2"
+  family: quadruped_robot
+  root_part: base
+  dimensions:
+    length_m: 0.70
+    width_m: 0.31
+    height_m: 0.40
+  # Conservative provisional gait envelope. Measure on the actual dog before
+  # allowing motion; the acceptance check intentionally fails while unverified.
+  footprint:
+    base_frame: base_link
+    points:
+      - [0.40, 0.25]
+      - [0.40, -0.25]
+      - [-0.40, -0.25]
+      - [-0.40, 0.25]
+  mass_kg: 15.0
+  passable_door_width_m: 0.70
+
+  exports:
+    - provider_id: robot_description
+      capabilities:
+        - path: robonix/primitive/robot_description/driver
+          description: "Publish the licensed Go2 URDF, robot_description and TF tree."
+    - provider_id: mapping
+      capabilities:
+        - {path: robonix/service/map/occupancy_grid, description: "Current 2D occupancy grid."}
+        - {path: robonix/service/map/pointcloud, description: "Fused 3D map cloud."}
+        - {path: robonix/service/map/pose, description: "Localized Go2 pose in the map frame."}
+    - provider_id: nav2
+      capabilities:
+        - {path: robonix/service/navigation/navigate, description: "Plan and navigate to a verified map pose with dynamic obstacle avoidance."}
+        - {path: robonix/service/navigation/navigate/status, description: "Report Nav2 task state."}
+        - {path: robonix/service/navigation/navigate/cancel, description: "Cancel and stop the active navigation goal."}
+    - provider_id: semantic_navigation
+      capabilities:
+        - {path: robonix/skill/semantic_navigation/navigate_landmark, description: "Resolve a Chinese semantic landmark name in the active saved map and invoke Robonix navigation."}
+        - {path: robonix/skill/semantic_navigation/navigate_landmark/status, description: "Report semantic navigation task state."}
+        - {path: robonix/skill/semantic_navigation/navigate_landmark/cancel, description: "Cancel semantic navigation through the navigation service."}
+    - provider_id: speech
+      capabilities:
+        - {path: robonix/service/speech/asr, description: "Recognize Chinese speech from the selected client microphone."}
+        - {path: robonix/service/speech/speak, description: "Synthesize Chinese speech to the selected client speaker."}
+    - provider_id: scene
+      capabilities:
+        - {path: robonix/system/scene/list_objects, description: "List current scene objects."}
+        - {path: robonix/system/scene/get_scene_graph, description: "Read map, robot and semantic scene state."}
+
+  components:
+    - id: base
+      type: mobile_base
+      urdf_link: base_link
+      exports:
+        - provider_id: go2_chassis
+          capabilities:
+            - {path: robonix/primitive/chassis/driver, description: "Fail-closed Go2 high-level chassis lifecycle driver."}
+            - {path: robonix/primitive/chassis/twist_in, description: "Guarded canonical Nav2 velocity input."}
+            - {path: robonix/primitive/chassis/odom, description: "SportModeState-derived odometry and odom to base_link TF."}
+      components:
+        - id: body
+          type: body_part
+          urdf_link: base
+          exports: []
+          components:
+            - id: onboard_lidar
+              type: lidar_3d
+              urdf_link: utlidar_lidar
+              exports:
+                - provider_id: go2_sensors
+                  capabilities:
+                    - {path: robonix/primitive/lidar/driver, description: "Read-only onboard lidar lifecycle."}
+                    - {path: robonix/primitive/lidar/lidar3d, description: "Go2 PointCloud2 stream."}
+            - id: onboard_imu
+              type: imu
+              urdf_link: imu
+              exports:
+                - provider_id: go2_sensors
+                  capabilities:
+                    - {path: robonix/primitive/imu/imu, description: "SportModeState IMU stream."}
+            - id: front_camera
+              type: rgb_camera
+              urdf_link: front_camera
+              exports:
+                - provider_id: go2_sensors
+                  capabilities:
+                    - {path: robonix/primitive/camera/rgb, description: "Front RGB image stream."}
+            - id: client_audio
+              type: audio_io
+              exports:
+                - provider_id: audio_client_bridge
+                  capabilities:
+                    - {path: robonix/primitive/audio/mic, description: "Receive microphone audio from robonix-client."}
+                    - {path: robonix/primitive/audio/speaker, description: "Send synthesized audio to robonix-client."}
+
+description:
+  summary: "Unitree Go2 with onboard lidar, RGB camera and IMU, adapted for Robonix semantic Nav2 navigation."
+  can_do:
+    - "Publish read-only chassis state, odometry, TF, lidar, camera and IMU data."
+    - "Build or load a laboratory map, localize, plan and avoid dynamic obstacles with Nav2."
+    - "Resolve a verified Chinese semantic landmark such as 自动售货机 and navigate to its saved approach pose."
+    - "Expose camera, lidar, map, robot pose and task state in a read-only browser UI."
+  cannot_do:
+    - "Stand, sit, recover posture or use low-level motor control through Robonix."
+    - "Navigate to an unverified landmark, a mismatched map, or an unknown visual object."
+    - "Manipulate objects; this deployment has no arm or gripper."
+  notes:
+    - "Real-time visual search for an unknown vending machine is intentionally outside the first usable version."
+    - "Dimensions and sensor transforms must be verified on the target Go2 before supervised motion."

@@ -1,0 +1,45 @@
+# G1 RTAB-Map configuration.
+# G1 humanoid: Mid-360 LiDAR at head height (~1.2 m), RealSense D435i depth camera also head-mounted.
+# Bipedal base, no planar footprint — RTAB-Map builds a 2D occupancy grid
+# from the dense 3D point cloud.
+
+RGBD/CreateOccupancyGrid: true
+Grid/Sensor: 0
+Grid/FromDepth: false
+Grid/RangeMin: 0.30
+# Mid-360 effective range: 0.3 – 10 m, map local horizon at 6 m.
+Grid/RangeMax: 6.0
+Grid/CellSize: 0.05
+# Mid-360 packets are sparse and non-repetitive; ray tracing draws long
+# free-space spokes. Ground returns already cover those cells, so disable.
+Grid/RayTracing: false
+Grid/3D: false
+Grid/NormalsSegmentation: false
+# G1 base_link is near the ankle (~0.6 m above floor). Mid-360 point cloud
+# puts the floor near z=0 in the robot frame when level. Reject points below
+# floor as ground; keep above as obstacles.
+Grid/MaxObstacleHeight: 1.50
+Grid/MaxGroundHeight: -0.20
+# Sparse packet → isolated speckle in local grid. Three-neighbour radius
+# filtering cleans noise while preserving thin wall continuity.
+Grid/NoiseFilteringRadius: 0.20
+Grid/NoiseFilteringMinNeighbors: 3
+# G1 narrow footprint (feet on a line). Footprint bounds affect the
+# occupancy grid cell marking but not the 2D grid shape.
+Grid/FootprintLength: 0.40
+Grid/FootprintWidth: 0.15
+Reg/Strategy: 1
+Reg/Force3DoF: true
+Optimizer/Strategy: 1
+Optimizer/GravitySigma: 0
+# Keep neighbour-link refining off until a deskewed cloud source is available.
+RGBD/NeighborLinkRefining: false
+RGBD/ProximityBySpace: false
+RGBD/ProximityPathMaxNeighbors: 1
+RGBD/AngularUpdate: 0.06
+RGBD/LinearUpdate: 0.06
+Mem/NotLinkedNodesKept: false
+Rtabmap/DetectionRate: 2.0
+Icp/MaxCorrespondenceDistance: 0.20
+Icp/MaxTranslation: 0.40
+Icp/MaxRotation: 0.60

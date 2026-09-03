@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>go2_description</name>
+  <version>1.0.0</version>
+  <description>Unitree Go2 model with a Robonix base_link navigation root.</description>
+  <maintainer email="zxq13204030517@163.com">Origamii520</maintainer>
+  <license>BSD-3-Clause</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+    <architecture_independent/>
+  </export>
+</package>

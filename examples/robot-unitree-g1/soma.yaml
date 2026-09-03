@@ -1,0 +1,202 @@
+# Soma body description for the Unitree G1 bipedal humanoid robot.
+# Head-mounted: Livox Mid-360 3D LiDAR + Intel RealSense D435i
+# Body control: Unitree SDK2 LocoClient (high-level locomotion API)
+# Dual arms: SDK2 joint command (no IK/grasp pipeline yet)
+
+urdf:
+  path: ./g1_description/g1_29dof.urdf
+  root_link: base_link
+  model_name: unitree_g1
+
+robot:
+  id: unitree_g1_01
+  display_name: "Unitree G1 Humanoid"
+  family: humanoid_robot
+  root_part: base
+
+  # Approximate G1 dimensions (1.2 m tall with arms lowered)
+  dimensions:
+    length_m: 0.40
+    width_m: 0.25
+    height_m: 1.20
+  mass_kg: 30.0
+  passable_door_width_m: 0.70
+
+  # G1 narrow foot-based footprint — two feet on a line.
+  # Nav2 inflation covers the narrow base; actual collision envelope
+  # is defined by the URDF.
+  footprint:
+    base_frame: base_link
+    points:
+      - [0.15, 0.08]
+      - [0.15, -0.08]
+      - [-0.15, -0.08]
+      - [-0.15, 0.08]
+
+  # ============================================================
+  # Robot-level capability exports
+  # ============================================================
+  exports:
+    - provider_id: robot_description
+      capabilities:
+        - { path: robonix/primitive/robot_description/driver,
+            description: "Publish the G1 URDF, /robot_description and TF tree." }
+    - provider_id: mapping
+      capabilities:
+        - { path: robonix/service/map/occupancy_grid,
+            description: "Current 2D occupancy grid from RTAB-Map." }
+        - { path: robonix/service/map/pointcloud,
+            description: "Fused 3D map point cloud." }
+        - { path: robonix/service/map/pose,
+            description: "Localized G1 pose in the map frame." }
+    - provider_id: nav2
+      capabilities:
+        - { path: robonix/service/navigation/navigate,
+            description: "Navigate to a 2D goal with dynamic obstacle avoidance." }
+        - { path: robonix/service/navigation/navigate/status,
+            description: "Report Nav2 task state." }
+        - { path: robonix/service/navigation/navigate/cancel,
+            description: "Cancel the active navigation goal." }
+    - provider_id: semantic_navigation
+      capabilities:
+        - { path: robonix/skill/semantic_navigation/navigate_landmark,
+            description: "Resolve a Chinese semantic landmark and navigate to its approach pose." }
+        - { path: robonix/skill/semantic_navigation/navigate_landmark/status,
+            description: "Report semantic navigation task state." }
+        - { path: robonix/skill/semantic_navigation/navigate_landmark/cancel,
+            description: "Cancel semantic navigation." }
+    - provider_id: speech
+      capabilities:
+        - { path: robonix/service/speech/asr,
+            description: "Recognize Chinese speech from the selected client microphone." }
+        - { path: robonix/service/speech/speak,
+            description: "Synthesize Chinese speech to the selected client speaker." }
+    - provider_id: scene
+      capabilities:
+        - { path: robonix/system/scene/list_objects,
+            description: "List current semantic scene objects." }
+        - { path: robonix/system/scene/get_scene_graph,
+            description: "Read map, robot and semantic scene state." }
+
+  # ============================================================
+  # Hierarchical component tree (mirrors URDF links)
+  # ============================================================
+  components:
+    # ----- Mobile base (locomotion controller) -----
+    - id: base
+      type: mobile_base
+      urdf_link: base_link
+      exports:
+        - provider_id: g1_chassis
+          capabilities:
+            - { path: robonix/primitive/chassis/driver,
+                description: "G1 SDK2 LocoClient locomotion driver." }
+            - { path: robonix/primitive/chassis/twist_in,
+                description: "Guarded canonical Nav2 velocity input." }
+            - { path: robonix/primitive/chassis/odom,
+                description: "SDK2 base controller odometry + TF." }
+
+      components:
+        # ----- Head: Mid-360 LiDAR + IMU + RealSense D435i -----
+        - id: head
+          type: body_part
+          urdf_link: base_link
+          exports: []
+
+          components:
+            - id: mid360_lidar
+              type: lidar_3d
+              urdf_link: mid360_lidar
+              exports:
+                - provider_id: mid360_lidar
+                  capabilities:
+                    - { path: robonix/primitive/lidar/driver,
+                        description: "Head-mounted Mid-360 3D LiDAR lifecycle." }
+                    - { path: robonix/primitive/lidar/lidar3d,
+                        description: "Mid-360 3D point cloud stream." }
+
+            - id: mid360_imu
+              type: imu
+              urdf_link: mid360_imu
+              exports:
+                - provider_id: mid360_imu
+                  capabilities:
+                    - { path: robonix/primitive/imu/imu,
+                        description: "Mid-360 built-in IMU stream." }
+
+            - id: front_rgbd
+              type: rgbd_camera
+              urdf_link: front_camera
+              exports:
+                - provider_id: realsense_camera
+                  capabilities:
+                    - { path: robonix/primitive/camera/rgb,
+                        description: "Front RealSense D435i RGB stream." }
+                    - { path: robonix/primitive/camera/depth,
+                        description: "Front RealSense D435i aligned depth." }
+                    - { path: robonix/primitive/camera/intrinsics,
+                        description: "Front camera intrinsics." }
+                    - { path: robonix/primitive/camera/snapshot,
+                        description: "Capture a front RGB snapshot." }
+                    - { path: robonix/primitive/camera/depth_snapshot,
+                        description: "Capture a front depth snapshot." }
+
+        # ----- Left arm (SDK2 joint command) -----
+        - id: left_arm
+          type: manipulator
+          urdf_link: left_thigh_link
+          exports:
+            - provider_id: g1_chassis
+              capabilities:
+                - { path: robonix/primitive/arm/joint_states,
+                    description: "Read left arm joint states." }
+                - { path: robonix/primitive/arm/pos_cmd,
+                    description: "Command left arm joints via SDK2 high-level API." }
+
+        # ----- Right arm (SDK2 joint command) -----
+        - id: right_arm
+          type: manipulator
+          urdf_link: right_thigh_link
+          exports:
+            - provider_id: g1_chassis
+              capabilities:
+                - { path: robonix/primitive/arm/joint_states,
+                    description: "Read right arm joint states." }
+                - { path: robonix/primitive/arm/pos_cmd,
+                    description: "Command right arm joints via SDK2 high-level API." }
+
+        # ----- Audio I/O (client-side mic/speaker bridge) -----
+        - id: client_audio
+          type: audio_io
+          exports:
+            - provider_id: audio_client_bridge
+              capabilities:
+                - { path: robonix/primitive/audio/mic,
+                    description: "Receive microphone audio from robonix-client." }
+                - { path: robonix/primitive/audio/speaker,
+                    description: "Send synthesized audio to robonix-client." }
+
+# ============================================================
+# Human-readable description consumed by the operator UI
+# ============================================================
+description:
+  summary: >
+    Unitree G1 bipedal humanoid with SDK2 LocoClient locomotion,
+    head-mounted Livox Mid-360 LiDAR, Intel RealSense D435i RGB-D camera,
+    and dual arms for indoor navigation and semantic mapping.
+  can_do:
+    - "Publish SDK2 locomotion state, odometry, TF, and joint states."
+    - "Read head-mounted Mid-360 3D LiDAR and RealSense D435i RGB-D camera."
+    - "Build a map with RTAB-Map, localize, and navigate with Nav2."
+    - "Navigate to verified Chinese semantic landmarks."
+    - "Control dual arm joint positions via SDK2 high-level API."
+    - "Expose camera, lidar, map and task state in the operator browser UI."
+  cannot_do:
+    - "Recover posture, run fast, or climb stairs."
+    - "Execute 6-DoF grasps; no hand-eye IK or manipulation pipeline."
+    - "Navigate to unverified landmarks or mismatched maps."
+    - "Operate reliably on wet/icy surfaces where bipedal stability is compromised."
+  notes:
+    - "Locomotion limits (stand_height, swing_height, max speeds) are set in g1_chassis config."
+    - "Footprint is narrow (two feet); Nav2 inflation provides sideways clearance."
+    - "Arm control is via SDK2 joint command; grasp execution is not yet supported."

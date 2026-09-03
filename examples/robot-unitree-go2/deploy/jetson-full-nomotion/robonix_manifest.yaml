@@ -1,0 +1,176 @@
+manifestVersion: 1
+name: robonix-go2-jetson-full-nomotion
+
+catalog:
+  name: robonix.robot.unitree.go2.jetson_nomotion
+  version: 0.1.0
+  description: ARM64 Jetson no-motion deployment contract for Go2 integration.
+  license: Apache-2.0 AND BSD-3-Clause AND MIT AND (EPL-2.0 OR EDL-1.0)
+  tags: [robot, unitree, go2, jetson, arm64, navigation, speech, no-motion]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+env:
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  ROBONIX_PROVIDER_BIND_HOST: 127.0.0.1
+  ROBONIX_ADVERTISE_HOST: 127.0.0.1
+  SPEECH_BIND_ADDR: 127.0.0.1
+  MAPPING_ENABLE_VIZ: "false"
+  MAPPING_WEBUI_HOST: 127.0.0.1
+  ROBONIX_VELOCITY_OUTPUT_TOPIC: /robonix/nomotion/cmd_vel
+  GO2_ALLOW_MOTION: "false"
+  GO2_OPERATOR_PRESENT: "false"
+  GO2_SENSOR_SOURCE_MODE: local
+
+system:
+  atlas: {listen: 127.0.0.1:50051, log: info}
+  executor: {listen: 127.0.0.1:50061, log: info}
+  pilot:
+    listen: 127.0.0.1:50071
+    log: info
+    vlm:
+      upstream: ${VLM_BASE_URL}
+      api_key: ${VLM_API_KEY}
+      model: ${VLM_MODEL}
+      api_format: openai
+  liaison: {listen: 127.0.0.1:50081, log: info}
+  soma:
+    listen: 127.0.0.1:50091
+    provider_id: soma
+    robot_yaml: /opt/robonix/deploy/soma.yaml
+    log: info
+
+primitive:
+  - name: go2_chassis
+    path: /opt/robonix/deploy/packages/go2_chassis
+    config:
+      state_topic: /sportmodestate
+      state_fallback_topic: /lf/sportmodestate
+      twist_in_topic: /robonix/nomotion/chassis_input_disabled
+      odom_topic: /odom
+      imu_topic: /imu/data
+      odom_frame: odom
+      base_frame: base_link
+      imu_frame: imu
+      velocity_frame: odom
+      network_interface: eth0
+      allow_motion: false
+      operator_present: false
+      safety_ack: ""
+      allowed_modes: [255]
+
+  - name: go2_sensors
+    path: /opt/robonix/deploy/packages/go2_sensors
+    config:
+      source_mode: local
+      network_interface: eth0
+      lidar_input_topic: /utlidar/cloud
+      lidar_output_topic: /scanner/cloud
+      imu_input_topic: /imu/data
+      imu_output_topic: /scanner/imu
+      camera_topic: /camera/color/image_raw
+      camera_info_topic: /camera/color/camera_info
+      camera_status_topic: /go2/sensors/status
+      camera_frame: front_camera
+      camera_fps: 10.0
+
+  - name: robot_description
+    path: /opt/robonix/deploy/packages/go2_description
+
+  - name: audio_client_bridge
+    path: /opt/robonix/source/examples/webots/primitives/audio_client_bridge
+    config:
+      transport: reverse
+      listen_host: 127.0.0.1
+      listen_port: 60002
+
+service:
+  - name: mapping
+    path: /opt/robonix/deploy/third_party/service-map-rbnx
+    manifest: package_manifest.jetson-native.yaml
+    config:
+      algo: rtabmap
+      base_frame: base_link
+      odom_frame: odom
+      use_sim_time: false
+      webui_host: 127.0.0.1
+      webui_port: 8091
+      map_id: "${GO2_MAP_ID}"
+      map_mode: "${GO2_MAP_MODE}"
+      # UniLiDAR packets expose a monotonic per-point `time` channel; external
+      # chassis odometry supplies the fixed-frame motion for deskewing.
+      deskew_lidar: true
+      params_file: /opt/robonix/deploy/config/rtabmap_params.yaml
+      rtabmap_inputs: [lidar, imu, odom]
+      sensor_providers:
+        lidar3d: go2_sensors
+        imu: go2_sensors
+        odom: go2_chassis
+
+  - name: navigation
+    capability_id: nav2
+    path: /opt/robonix/deploy/third_party/service-navigation-rbnx
+    manifest: package_manifest.jetson-native.yaml
+    config:
+      params_file: /opt/robonix/deploy/config/nav2_params_go2.yaml
+      bt_xml_file: /opt/robonix/deploy/config/navigate.xml
+      bt_through_poses_xml_file: /opt/robonix/deploy/config/navigate_through_poses.xml
+      use_sim_time: false
+      action_wait_s: 90.0
+      velocity_output_topic: /robonix/nomotion/cmd_vel
+      provider_ids:
+        map: mapping
+        odom: go2_chassis
+        scan: go2_sensors
+        scan_cloud: go2_sensors
+      scan_projection:
+        enabled: true
+        target_frame: base_link
+        min_height_m: -0.25
+        max_height_m: 0.50
+        range_max_m: 12.0
+        self_filter_margin_m: 0.02
+        transform_tolerance_s: 0.20
+        deskewing: false
+        deskew_fixed_frame: odom
+
+  - name: speech
+    path: /opt/robonix/source/services/speech
+    config:
+      speech_backend: local
+      disable_whisper: true
+      funasr_model: /opt/robonix/models/funasr-zh-online
+      funasr_device: cpu
+      default_speaker_provider_id: audio_client_bridge
+      wake_words: ["罗伯尼克斯", "罗伯特"]
+
+  - name: go2_dashboard
+    path: /opt/robonix/deploy/packages/go2_dashboard
+    config:
+      host: 127.0.0.1
+      port: 8092
+      camera_topic: /camera/color/image_raw
+      cloud_topic: /scanner/cloud
+      scan_topic: /scanner/scan
+      map_topic: /map
+      pose_topic: /robonix/map/pose
+      odom_topic: /odom
+      map_frame: map
+      base_frame: base_link
+      browser_voice_enabled: "false"
+      liaison_endpoint: 127.0.0.1:50081
+      audio_bridge_url: ws://127.0.0.1:60002/client
+      browser_mic_provider: audio_client_bridge
+
+skill:
+  - name: semantic_navigation
+    path: /opt/robonix/deploy/packages/semantic_navigation
+    config:
+      landmarks_file: /opt/robonix/deploy/config/semantic_landmarks.yaml
+      expected_map_id: "${GO2_MAP_ID}"
+      navigation_provider_id: nav2
+      mapping_provider_id: mapping
+      require_verified: true
+      rpc_timeout_s: 10.0
+      lifecycle_wait_s: 10.0
+      status_endpoint: http://127.0.0.1:8092/api/semantic-task

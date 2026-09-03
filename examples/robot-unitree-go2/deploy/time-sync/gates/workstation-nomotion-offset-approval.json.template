@@ -1,0 +1,27 @@
+{
+  "schema": "robonix-go2-workstation-nomotion-stamp-offset-v3",
+  "session_id": "REPLACE_WITH_REVIEWED_SESSION_ID",
+  "motion_enabled": false,
+  "identity_evidence_verified": true,
+  "expected_clock_domain": "unitree-main-computer@192.168.123.161",
+  "writer_gids": {
+    "sport_primary": "REPLACE_WITH_48_LOWERCASE_HEX_CHARACTERS",
+    "mid360_imu": "REPLACE_WITH_48_LOWERCASE_HEX_CHARACTERS",
+    "mid360_cloud": "REPLACE_WITH_48_LOWERCASE_HEX_CHARACTERS",
+    "mid360_odom": "REPLACE_WITH_48_LOWERCASE_HEX_CHARACTERS"
+  },
+  "writer_source_ipv4": "192.168.123.161",
+  "offset_evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX_CHARACTERS",
+  "fixed_local_minus_source_offset_ns": "REPLACE_WITH_REVIEWED_SIGNED_INTEGER_NANOSECONDS",
+  "affine_drift_algorithm": "one-second-lower-envelope-theil-sen-v1",
+  "affine_drift_window_ns": 30000000000,
+  "affine_window_common_drifts_ppm": {
+    "first": "REPLACE_WITH_FIRST_30_SECOND_COMMON_DRIFT_PPM",
+    "second": "REPLACE_WITH_SECOND_30_SECOND_COMMON_DRIFT_PPM"
+  },
+  "approved_affine_common_drift_ppm": "REPLACE_WITH_TWO_WINDOW_MEDIAN_DRIFT_PPM",
+  "affine_window_common_drift_deviation_ppm": "REPLACE_WITH_ABSOLUTE_WINDOW_DIFFERENCE_PPM_AT_MOST_5",
+  "not_before_unix_ns": "REPLACE_WITH_SIGNED_INTEGER_NANOSECONDS",
+  "expires_unix_ns": "REPLACE_WITH_SIGNED_INTEGER_NANOSECONDS_AT_MOST_ONE_HOUR_LATER",
+  "operator_ack": "I_APPROVE_THIS_FIXED_OFFSET_FOR_WORKSTATION_NOMOTION"
+}

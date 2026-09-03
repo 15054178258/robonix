@@ -1,0 +1,65 @@
+# Go2 RTAB-Map profile: onboard 3D lidar + chassis odometry + IMU. RTAB-Map
+# owns map->odom; the chassis adapter is the sole odom->base_link authority.
+RGBD/CreateOccupancyGrid: true
+Grid/Sensor: 0
+Grid/FromDepth: false
+Grid/RangeMin: 0.30
+# Keep a bounded 6 m local occupancy horizon.  The 2026-07-24 hardware run
+# showed that this removes distant endpoint spray while retaining both corridor
+# walls, but it does not by itself correct trajectory yaw drift.
+Grid/RangeMax: 6.0
+Grid/CellSize: 0.05
+# The UniLiDAR publishes sparse non-repetitive packets rather than a complete
+# planar sweep.  Per-packet ray tracing therefore draws long free-space spokes
+# between returns.  Ground returns already provide the observed free cells for
+# this profile, so keep ray tracing disabled.  This removes RTAB-Map's
+# synthetic free-space rays, while the opt-in dense_scan_2d conditioning chain
+# handles residual spoke-like geometry caused by sparse packet endpoints.
+Grid/RayTracing: false
+Grid/3D: false
+# A single non-repetitive Unitree UniLiDAR packet is too sparse for stable normal
+# estimation.  With normal segmentation enabled, the real Go2's live
+# OccupancyGrid contained zero occupied cells even while the scan had nearby
+# finite returns.  Use RTAB-Map's
+# passthrough height split for this hardware profile: points above
+# MaxGroundHeight and below MaxObstacleHeight become obstacles.  Go2's
+# base_link is body-centred rather than floor-centred; the calibrated vendor
+# cloud puts the corridor floor near z=-0.39 m.  Keep returns below -0.25 m as
+# ground while retaining walls and obstacles at least about 0.14 m tall.  This
+# matches the Nav2 point-cloud projection lower bound.
+Grid/NormalsSegmentation: false
+Grid/MaxObstacleHeight: 1.50
+Grid/MaxGroundHeight: -0.25
+# The non-repetitive UniLiDAR pattern also leaves isolated floor and wall
+# returns in each local grid.  In the 2026-07-24 real-corridor replay, RTAB-Map
+# radius filtering at 0.20 m with three neighbours kept 96.63% of free cells
+# and 86.19% of occupied cells while removing about half of the isolated
+# occupied speckle pixels.  A five-neighbour candidate broke thin wall
+# continuity, so keep the conservative three-neighbour setting.
+Grid/NoiseFilteringRadius: 0.20
+Grid/NoiseFilteringMinNeighbors: 3
+Grid/FootprintLength: 0.80
+Grid/FootprintWidth: 0.50
+Reg/Strategy: 1
+Reg/Force3DoF: true
+Optimizer/Strategy: 1
+Optimizer/GravitySigma: 0
+# Chassis odometry is the verified local trajectory authority.  Refining every
+# neighbour link from one sparse, non-deskewed LiDAR packet repeatedly replaced
+# that trajectory with low-overlap ICP matches (median accepted translation
+# correction 0.105 m in the 2026-07-24 hardware run).  Spatial proximity also
+# cannot provide a robust closure without an accumulated/deskewed registration
+# input, so both paths remain off until that input has passed replay validation.
+RGBD/NeighborLinkRefining: false
+RGBD/ProximityBySpace: false
+RGBD/ProximityPathMaxNeighbors: 1
+RGBD/AngularUpdate: 0.06
+RGBD/LinearUpdate: 0.06
+# Do not retain the intermediate nodes which are intentionally skipped by the
+# movement thresholds.  Keeping them made the sparse local-grid database much
+# larger without adding pose constraints or map coverage.
+Mem/NotLinkedNodesKept: false
+Rtabmap/DetectionRate: 2.0
+Icp/MaxCorrespondenceDistance: 0.20
+Icp/MaxTranslation: 0.40
+Icp/MaxRotation: 0.60

@@ -1,0 +1,22 @@
+manifestVersion: 1
+
+package:
+  name: robonix.service.unitree.g1.dashboard
+  version: 0.1.0
+  description: Robonix provider for G1 operator web UI with camera stream, map, and navigation controls.
+  license: Apache-2.0
+  tags: [robot, unitree, g1, dashboard, ui, telemetry, ros2]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+build: bash g1_dashboard/scripts/build.sh
+start: bash g1_dashboard/scripts/start.sh
+stop: bash g1_dashboard/scripts/stop.sh
+
+capabilities:
+  - name: robonix/service/telemetry/dashboard/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/service/telemetry/dashboard/status
+    path: capabilities/status.v1.toml
+
+depends: []

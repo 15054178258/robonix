@@ -1,0 +1,9 @@
+[contract]
+id = "robonix/service/telemetry/dashboard/driver"
+version = "1"
+kind = "service"
+idl = "lifecycle/srv/Driver.srv"
+description = "Lifecycle interface for the read-only Go2 telemetry dashboard provider."
+
+[mode]
+type = "rpc"

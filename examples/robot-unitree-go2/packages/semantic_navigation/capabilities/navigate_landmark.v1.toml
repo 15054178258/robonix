@@ -1,0 +1,9 @@
+[contract]
+id      = "robonix/skill/semantic_navigation/navigate_landmark"
+version = "1"
+kind    = "skill"
+idl     = "semantic_navigation/srv/NavigateLandmark.srv"
+description = "Resolve a unique saved semantic landmark and start Robonix navigation to its verified approach pose."
+
+[mode]
+type = "rpc"

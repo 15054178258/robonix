@@ -1,0 +1,46 @@
+# INACTIVE TEMPLATE: installation section is omitted by design.
+[Unit]
+Description=Robonix Go2 subscription-only chrony refclock feeder
+After=network-online.target chrony.service
+Requires=chrony.service
+ConditionPathExists=/etc/robonix-go2/ENABLE_GO2_REFCLOCK
+ConditionPathExists=/var/lib/robonix-go2/time-evidence
+
+[Service]
+Type=simple
+User=robonix-time
+Group=chrony
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=ROS_DOMAIN_ID=0
+Environment=ROS_LOCALHOST_ONLY=0
+Environment=CYCLONEDDS_URI=file:///etc/robonix-go2/cyclonedds-go2.xml
+ExecStartPre=/usr/bin/python3 /opt/robonix-go2/deploy/jetson-time-sync/validate_approval.py --bundle /var/lib/robonix-go2/time-evidence
+ExecStart=/usr/bin/python3 /opt/robonix-go2/deploy/time-sync/go2_clock_ref.py --mode feed-chrony --duration-seconds 0 --enable-file /etc/robonix-go2/ENABLE_GO2_REFCLOCK --approval-file /var/lib/robonix-go2/time-evidence/go2-clock-ref-approval.json --chrony-socket /run/chrony/go2.sock
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=10s
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectClock=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@clock @mount @privileged
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+IPAddressDeny=any
+IPAddressAllow=192.168.123.0/24
+UMask=0077

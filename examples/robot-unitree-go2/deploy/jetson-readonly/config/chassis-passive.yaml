@@ -1,0 +1,27 @@
+go2_chassis_adapter:
+  ros__parameters:
+    # Immutable deployment gate: this profile has no SDK sport daemon and can
+    # never arm the adapter even if a caller invokes its service.
+    allow_motion: false
+    sport_state_topic: /sportmodestate
+    state_fallback_topic: /lf/sportmodestate
+    odom_topic: /odom
+    imu_topic: /imu/data
+    status_topic: /go2_chassis/status
+    diagnostics_topic: /diagnostics
+    odom_frame: odom
+    base_frame: base_link
+    imu_frame: imu
+    state_velocity_frame: odom
+    allowed_modes: [255]
+    state_timeout_sec: 0.20
+    max_source_stamp_age_sec: 0.20
+    max_source_stamp_future_skew_sec: 0.05
+    command_timeout_sec: 0.25
+    zero_preparation_sec: 0.50
+    max_vx: 0.25
+    max_vy: 0.0
+    max_wz: 0.40
+    max_linear_acceleration: 0.30
+    max_angular_acceleration: 0.80
+    max_position_jump_m: 1.0

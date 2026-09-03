@@ -1,0 +1,6 @@
+# A natural-language name or utterance containing one saved landmark name.
+string name
+---
+bool accepted
+string run_id
+string detail

@@ -1,0 +1,18 @@
+manifestVersion: 1
+
+package:
+  name: robonix.primitive.unitree.g1.chassis
+  version: 0.1.0
+  description: Guarded Unitree G1 ROS 2 chassis adapter using SDK2 LocoClient
+  license: Apache-2.0
+  tags: [primitive, chassis, unitree, g1, humanoid, ros2, sdk2]
+  maintainers:
+    - Origamii520 <zxq13204030517@163.com>
+
+build: bash scripts/build.sh
+start: bash scripts/start.sh
+
+capabilities:
+  - name: robonix/primitive/chassis/driver
+  - name: robonix/primitive/chassis/twist_in
+  - name: robonix/primitive/chassis/odom

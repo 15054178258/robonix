@@ -1,0 +1,14 @@
+# Workspace template for the official Robonix Client. The launcher copies this
+# into rbnx-build/client/settings.yaml on first use; browser changes never edit
+# this tracked file.
+robotHost: 127.0.0.1
+atlasPort: 50051
+liaisonEndpoint: ""
+userId: operator:go2
+recordSeconds: 30
+language: zh-CN
+micNodeId: ""
+micDeviceId: ""
+speakerNodeId: ""
+speakerDeviceId: ""
+ttsNodeId: ""
