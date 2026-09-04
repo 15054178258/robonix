@@ -7,6 +7,8 @@ find_package(rosidl_default_runtime REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 add_executable(g1_chassis_adapter_node
   src/g1_chassis_adapter_node.cpp
@@ -18,6 +20,8 @@ ament_target_dependencies(g1_chassis_adapter_node
   std_msgs
   geometry_msgs
   nav_msgs
+  sensor_msgs
+  tf2_ros
 )
 
 install(TARGETS g1_chassis_adapter_node

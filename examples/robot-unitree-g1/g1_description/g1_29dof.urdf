@@ -1,4 +1,12 @@
 <robot name="g1_29dof">
+  <!-- Robonix navigation root: zero-offset base_link for chassis adapter and Soma. -->
+  <link name="base_link" />
+  <joint name="base_link_to_pelvis" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="pelvis" />
+  </joint>
+
   <material name="dark">
     <color rgba="0.2 0.2 0.2 1"/>
   </material>

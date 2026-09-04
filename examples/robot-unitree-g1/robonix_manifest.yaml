@@ -12,18 +12,18 @@ catalog:
 
 env:
   # Deployment root — "." when running locally (no external deploy dir).
-  ROBONIX_DEPLOY_DIR: "/home/szh/robonix-dev/robonix/examples/robot-unitree-g1"
+  ROBONIX_DEPLOY_DIR: "/home/szh/robonix/examples/robot-unitree-g1"
 
   RMW_IMPLEMENTATION: rmw_fastrtps_cpp
 
   # G1 network interface (usually the ethernet port to the robot)
-  G1_NETWORK_INTERFACE: "${G1_NETWORK_INTERFACE}"
+  G1_NETWORK_INTERFACE: "wlp0s20f3"
 
   # Motion gate — set to false for read-only / operator-supervised mode
   G1_ALLOW_MOTION: "${G1_ALLOW_MOTION}"
 
   # Mapping directory
-  MAPPING_MAPS_DIR: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/maps
+  MAPPING_MAPS_DIR: /home/szh/robonix/examples/robot-unitree-g1/third_party/service-map-rbnx/rbnx-build/data/maps
 
   # Scene data directories
   SCENE_OBJECT_MEMORY_DB: ${ROBONIX_DEPLOY_DIR}/rbnx-build/data/scene/objects.db
@@ -130,8 +130,9 @@ primitive:
     branch: main
     config:
       lidar_ip: 192.168.123.120
-      host_ip: 192.168.1.50
+      host_ip: 192.168.123.213
       xfer_format: 0
+      frame_id: mid360_link
       # Three attempts including cleanup stay below Soma's 90 s INIT deadline.
       sentinel_timeout_s: 20.0
 
@@ -141,13 +142,13 @@ primitive:
     config:
       sentinel_timeout_s: 45.0
 
-  - name: realsense_camera
-    url: https://github.com/syswonder/primitive-intel-realsense_d435i-camera-rbnx
-    branch: main
-    config:
-      depth_profile: 640x480x30
-      enable_imu: false
-      sentinel_timeout_s: 45.0
+  # - name: realsense_camera
+  #   url: https://github.com/syswonder/primitive-intel-realsense_d435i-camera-rbnx
+  #   branch: main
+  #   config:
+  #     depth_profile: 640x480x30
+  #     enable_imu: false
+  #     sentinel_timeout_s: 45.0
 
   # ============================================================
   # Robot description — publishes /robot_description and the TF tree.
@@ -181,7 +182,7 @@ service:
       webui_host: 127.0.0.1
       webui_port: 8091
       map_id: "${G1_MAP_ID}"
-      map_mode: "${G1_MAP_MODE}"
+      map_mode: mapping
       deskew_lidar: true
       dense_scan_2d: true
       dense_scan_refine_neighbors: true
@@ -204,8 +205,8 @@ service:
         lidar3d: mid360_lidar
         imu: mid360_imu
         odom: g1_chassis
-        rgb: realsense_camera
-        depth: realsense_camera
+        # rgb: realsense_camera
+        # depth: realsense_camera
 
   # ============================================================
   # Navigation 2 — bipedal-safe Nav2 with height-aware scan projection
@@ -242,6 +243,9 @@ service:
       guard_no_progress_s: 8.0
       guard_global_spin_timeout_s: 18.0
       guard_global_spin_limit_rad: 4.20
+      dynamic_speed:
+        max_linear_speed_mps: 1.0
+        default_percentage: 100
 
   # ============================================================
   # Speech — wake-word detection and text-to-speech.
@@ -278,7 +282,7 @@ service:
       initial_pose_auto_restore: false
       map_frame: map
       base_frame: base_link
-      browser_voice_enabled: "${G1_DASHBOARD_BROWSER_VOICE_ENABLED}"
+      browser_voice_enabled: "0"
       liaison_endpoint: 127.0.0.1:50081
       audio_bridge_url: ws://127.0.0.1:60002/client
       browser_mic_provider: audio_client_bridge

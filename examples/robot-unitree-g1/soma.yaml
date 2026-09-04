@@ -106,7 +106,7 @@ robot:
           components:
             - id: mid360_lidar
               type: lidar_3d
-              urdf_link: mid360_lidar
+              urdf_link: mid360_link
               exports:
                 - provider_id: mid360_lidar
                   capabilities:

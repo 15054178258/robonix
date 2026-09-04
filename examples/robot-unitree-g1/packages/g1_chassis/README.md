@@ -13,7 +13,7 @@ Guarded Unitree G1 chassis adapter using the SDK2 LocoClient.
 | Component | Language | Purpose |
 |---|---|---|
 | `g1_loco_daemon` | C++ | IPC server wrapping SDK2 LocoClient. 300 ms watchdog, velocity clamping, motion gating. |
-| `g1_chassis_adapter_node` | C++ (ROS2) | Subscribes to `/cmd_vel`, forwards commands to daemon via Unix socket. |
+| `g1_chassis_adapter_node` | C++ (ROS2) | Subscribes to `/cmd_vel`, forwards commands to daemon via Unix socket, and publishes odom plus waist joint-state heartbeats. |
 | `g1_chassis/main.py` | Python | Robonix primitive provider — spawns adapter + daemon, declares ROS2 capabilities. |
 
 ### Safety
@@ -23,6 +23,11 @@ Guarded Unitree G1 chassis adapter using the SDK2 LocoClient.
 - **Velocity limits** — vx, vy, omega are clamped to configured maximums.
 - **Zero-velocity stop** — a cmd_vel with all zeros updates the watchdog but does not issue movement.
 - **Adapter disconnect** — if the IPC peer disconnects, the daemon immediately issues StopMove.
+
+### ROS outputs
+
+- `/odom` carries the stationary odometry heartbeat used by mapping and navigation while real G1 odometry is not integrated.
+- `/joint_states` carries neutral waist joint positions so `robot_state_publisher` can connect `base_link` to torso-mounted sensors such as `mid360_link`.
 
 ### IPC Protocol
 

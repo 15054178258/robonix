@@ -218,6 +218,7 @@ exec docker run --rm \
     "${ZENOH_ARGS[@]}" \
     -v "$(pwd)":/scene \
     -v "$PKG/rbnx-build/codegen/scene_proto_gen:/scene/rbnx-build/codegen/proto_gen:ro" \
+    -v "$PKG/rbnx-build/codegen/robonix_mcp_types:/scene/rbnx-build/codegen/robonix_mcp_types:ro" \
     -v "$SCENE_HOST_DATA_DIR":/data/robonix \
     -v "$(rbnx path robonix-api)":/robonix-api:ro \
     "${EXTRA_MOUNTS[@]}" \
